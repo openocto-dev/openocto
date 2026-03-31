@@ -1,0 +1,103 @@
+# OpenOcto Default Configuration
+
+# Active persona
+persona: "octo"
+
+# Language: "auto" for auto-detection, or "en", "ru"
+language: "auto"
+
+# Audio I/O
+audio:
+  input_device: null       # null = system default
+  output_device: null      # null = system default
+  sample_rate: 16000
+  blocksize: 1280          # 80ms chunks
+
+# Wake word detection
+wakeword:
+  enabled: false           # true = always-on wake word, false = push-to-talk (Space)
+  model: "hey_octo_v0.1"  # OpenWakeWord model — "hey_octo_v0.1" (custom) or built-in: hey_jarvis_v0.1, alexa_v0.1, hey_mycroft_v0.1
+  threshold: 0.15
+  cooldown: 2.0            # seconds between detections
+
+# Voice Activity Detection
+vad:
+  engine: "silero"
+  threshold: 0.5
+  mic_gain: null           # null = auto-gain, or fixed multiplier (e.g. 30.0) — set via `openocto setup`
+  silence_duration: 3.5    # seconds of silence to stop recording
+  max_recording_duration: 60
+  pre_speech_buffer: 0.3
+
+# Speech-to-Text
+stt:
+  engine: "whisper.cpp"
+  model_size: "small"      # tiny, base, small, medium, large
+  language: "auto"         # auto-detect language
+  n_threads: 4
+  use_gpu: true
+
+# Text-to-Speech
+tts:
+  engine: "piper"           # default engine for all languages
+  engines: {}               # per-language overrides, e.g.: {ru: silero}
+  models:
+    en: "en_US-amy-medium"  # piper voice name
+    ru: "xenia"             # silero speaker (used when engines.ru = silero)
+  length_scale: 1.0
+  sentence_silence: 0.3
+
+# AI Backend
+ai:
+  default_backend: "claude"
+  max_history: 20          # max conversation turns to keep
+
+  # Native Anthropic API (uses anthropic SDK)
+  claude:
+    api_key: "${ANTHROPIC_API_KEY}"
+    model: "claude-sonnet-4-20250514"
+
+  # OpenAI-compatible providers
+  # Add any provider with: api_key, model, base_url
+  # Set no_auth: true for local proxies that don't need a key
+  providers:
+    claude-proxy:
+      model: "claude-sonnet-4"
+      base_url: "http://localhost:3456/v1"
+      no_auth: true
+
+    openai:
+      api_key: "${OPENAI_API_KEY}"
+      model: "gpt-4o"
+      base_url: "https://api.openai.com/v1"
+
+    zai:
+      api_key: "${ZAI_API_KEY}"
+      model: ""
+      base_url: ""
+
+    # --- Add more providers as needed ---
+    # gemini:
+    #   api_key: "${GEMINI_API_KEY}"
+    #   model: "gemini-2.5-pro"
+    #   base_url: "https://generativelanguage.googleapis.com/v1beta/openai"
+    #
+    # alibaba:
+    #   api_key: "${DASHSCOPE_API_KEY}"
+    #   model: "qwen-max"
+    #   base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    #
+    # deepseek:
+    #   api_key: "${DEEPSEEK_API_KEY}"
+    #   model: "deepseek-chat"
+    #   base_url: "https://api.deepseek.com/v1"
+    #
+    # ollama:
+    #   model: "llama3:8b"
+    #   base_url: "http://localhost:11434/v1"
+    #   no_auth: true
+
+# Logging
+logging:
+  level: "INFO"
+  file: null

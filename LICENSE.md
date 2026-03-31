@@ -4,7 +4,7 @@
 
 | Parameter | Value |
 |-----------|-------|
-| **Licensor** | Rocket Dev (rocketdev.io) |
+| **Licensor** | Rocket Dev (rocketdev.tech) |
 | **Licensed Work** | OpenOcto — open-source personal AI assistant constructor with voice control and persona system |
 | **Additional Use Grant** | You may use the Licensed Work for non-commercial and personal purposes, including self-hosting for private use, internal use within an organization (not offered as a service to third parties), educational use, research, and contributing to the project (including creating forks for non-commercial purposes). A commercial license from the Licensor is required if you: (a) offer the Licensed Work as a commercial product or paid service to third parties; (b) offer the Licensed Work as a hosted or managed service (SaaS); (c) embed the Licensed Work in commercial hardware or appliances for sale. |
 | **Change Date** | 2030-03-30 |
@@ -71,4 +71,4 @@ License text copyright © 2024 MariaDB plc, All Rights Reserved. "Business Sourc
 - 🔓 The code becomes available under the Apache License 2.0
 - 🔓 All restrictions above are removed for that version
 
-**Commercial licensing inquiries:** [license@openocto.dev](mailto:license@openocto.dev)
+**Commercial licensing inquiries:** [info@openocto.dev](mailto:info@openocto.dev)

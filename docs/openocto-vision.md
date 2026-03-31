@@ -625,6 +625,6 @@ openocto start --persona octo --ai ollama
 
 **Project:** OpenOcto
 **Mascot:** 🐙
-**Author:** [Rocket Dev](https://rocketdev.io)
+**Author:** [Rocket Dev](https://rocketdev.tech)
 **License:** BSL 1.1
 **Repository:** *coming soon*

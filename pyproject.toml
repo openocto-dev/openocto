@@ -1,0 +1,49 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "openocto"
+version = "0.1.0"
+description = "Open-source personal AI assistant constructor with voice control and persona system"
+license = {text = "BSL-1.1"}
+requires-python = ">=3.10"
+authors = [
+    {name = "Rocket Dev", email = "hello@rocketdev.io"},
+]
+readme = "README.md"
+
+dependencies = [
+    "pyyaml>=6.0",
+    "click>=8.0",
+    "pydantic>=2.0",
+    "numpy>=1.24",
+    "sounddevice>=0.4.6",
+    "pynput>=1.7",
+    "pywhispercpp>=1.2.0",
+    "piper-tts>=1.2.0",
+    "onnxruntime>=1.16",
+    "requests>=2.28",
+    "tqdm>=4.64",
+    "anthropic>=0.40",
+    "openai>=1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.21",
+]
+silero = [
+    "torch>=2.0",
+]
+wakeword = [
+    "openwakeword>=0.6.0",
+]
+
+[project.scripts]
+openocto = "openocto.__main__:main"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

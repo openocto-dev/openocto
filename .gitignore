@@ -1,14 +1,7 @@
 ### macOS
-# Finder metadata
 .DS_Store
-
-# Thumbnails
 ._*
-
-# Custom folder icons
-Icon
-
-# Volume root files
+Icon
 .DocumentRevisions-V100
 .fseventsd
 .Spotlight-V100
@@ -16,3 +9,41 @@ Icon
 .Trashes
 .VolumeIcon.icns
 .com.apple.timemachine.donotpresent
+
+### Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+*.so
+.venv/
+venv/
+env/
+
+### Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+### IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+### Project
+models/
+*.onnx
+*.bin
+*.ggml
+
+### Secrets
+.env
+config/local.yaml
+
+.claude
+CLAUDE.md
