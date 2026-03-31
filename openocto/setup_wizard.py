@@ -59,66 +59,76 @@ def run_setup(from_step: int = 1) -> None:
     click.secho("   Your personal AI voice assistant.\n", fg="cyan")
 
     if from_step > 1:
-        click.secho(f"   ⏩ Starting from step {from_step}/7\n", fg="yellow")
+        click.secho(f"   ⏩ Starting from step {from_step}/8\n", fg="yellow")
 
     # Load existing config values as defaults for skipped steps
     existing = _load_existing_config()
 
-    # Step 1: AI backend
+    # Step 1: Create user
     if from_step <= 1:
+        user_name = _step_create_user()
+    else:
+        click.secho("  ⏩ [1/8] User: (already created)", fg="yellow")
+
+    # Step 2: AI backend
+    if from_step <= 2:
         backend, api_key = _step_ai_backend()
     else:
         backend = existing.get("ai", {}).get("default_backend", "claude")
         api_key = ""
-        click.secho(f"  ⏩ [1/7] AI: {backend}", fg="yellow")
+        click.secho(f"  ⏩ [2/8] AI: {backend}", fg="yellow")
 
-    # Step 2: Whisper model size
-    if from_step <= 2:
+    # Step 3: Whisper model size
+    if from_step <= 3:
         model_size = _step_whisper_model()
     else:
         model_size = existing.get("stt", {}).get("model_size", "small")
-        click.secho(f"  ⏩ [2/7] STT: whisper-{model_size}", fg="yellow")
+        click.secho(f"  ⏩ [3/8] STT: whisper-{model_size}", fg="yellow")
 
-    # Step 3: TTS voices
-    if from_step <= 3:
+    # Step 4: TTS voices
+    if from_step <= 4:
         voice_en, voice_ru, primary_lang = _step_tts_voices()
     else:
         primary_lang = existing.get("language", "en")
         tts = existing.get("tts", {})
         voice_en = tts.get("models", {}).get("en", TTS_VOICES_EN[0][0])
         voice_ru = tts.get("models", {}).get("ru", SILERO_SPEAKERS_RU[0][0])
-        click.secho(f"  ⏩ [3/7] Voice: lang={primary_lang}, en={voice_en}, ru={voice_ru}", fg="yellow")  # noqa: E501
+        click.secho(f"  ⏩ [4/8] Voice: lang={primary_lang}, en={voice_en}, ru={voice_ru}", fg="yellow")  # noqa: E501
 
-    # Step 4: Audio devices
-    if from_step <= 4:
+    # Step 5: Audio devices
+    if from_step <= 5:
         input_device, output_device = _step_audio_devices()
     else:
         audio = existing.get("audio", {})
         input_device = audio.get("input_device")
         output_device = audio.get("output_device")
-        click.secho(f"  ⏩ [4/7] Audio: in={input_device}, out={output_device}", fg="yellow")
+        click.secho(f"  ⏩ [5/8] Audio: in={input_device}, out={output_device}", fg="yellow")
 
-    # Step 5: Microphone calibration
-    if from_step <= 5:
-        mic_gain = _step_mic_calibration(input_device)
-    else:
-        mic_gain = existing.get("vad", {}).get("mic_gain")
-        click.secho(f"  ⏩ [5/7] Mic gain: {mic_gain or 'auto'}", fg="yellow")
-
-    # Step 6: Wake word
+    # Step 6: Microphone calibration
     if from_step <= 6:
+        mic_gain, vad_threshold, rms_threshold = _step_mic_calibration(input_device)
+    else:
+        vad = existing.get("vad") or {}
+        mic_gain = vad.get("mic_gain")
+        vad_threshold = vad.get("threshold", 0.3)
+        rms_threshold = vad.get("rms_speech_threshold", 300)
+        click.secho(f"  ⏩ [6/8] Mic gain: {mic_gain or 'auto'}, RMS threshold: {rms_threshold}", fg="yellow")
+
+    # Step 7: Wake word
+    if from_step <= 7:
         wakeword_enabled, wakeword_model = _step_wakeword()
     else:
         ww = existing.get("wakeword", {})
         wakeword_enabled = ww.get("enabled", False)
         wakeword_model = ww.get("model", "")
-        click.secho(f"  ⏩ [6/7] Wake word: enabled={wakeword_enabled}, model={wakeword_model}", fg="yellow")
+        click.secho(f"  ⏩ [7/8] Wake word: enabled={wakeword_enabled}, model={wakeword_model}", fg="yellow")
 
     click.echo()
 
-    # Step 7: Write config
+    # Step 8: Write config
     _write_config(backend, api_key, model_size, voice_en, voice_ru, primary_lang,
-                  input_device, output_device, wakeword_enabled, wakeword_model, mic_gain)
+                  input_device, output_device, wakeword_enabled, wakeword_model,
+                  mic_gain, vad_threshold, rms_threshold)
 
     # Download models
     _step_download_models(model_size, voice_en, voice_ru, primary_lang,
@@ -152,9 +162,33 @@ def _load_existing_config() -> dict:
     return {}
 
 
+def _step_create_user() -> str:
+    """Step 1: Create the default user in HistoryStore."""
+    click.secho("👤 [1/8] Who are you?", bold=True)
+    click.echo()
+
+    import getpass
+    system_user = getpass.getuser().capitalize()
+
+    name = click.prompt("  Your name", default=system_user)
+
+    from openocto.history import HistoryStore
+    store = HistoryStore()
+    existing = store.get_user_by_name(name)
+    if existing:
+        click.secho(f"  ✅ Welcome back, {name}!", fg="green")
+    else:
+        store.create_user(name, is_default=True)
+        click.secho(f"  ✅ User \"{name}\" created!", fg="green")
+    store.close()
+
+    click.echo()
+    return name
+
+
 def _step_ai_backend() -> tuple[str, str]:
-    """Step 1: Choose AI backend and optionally enter API key."""
-    click.secho("🤖 [1/7] AI Brain", bold=True)
+    """Step 2: Choose AI backend and optionally enter API key."""
+    click.secho("🤖 [2/8] AI Brain", bold=True)
     click.echo()
 
     for i, (key, desc) in enumerate(AI_BACKENDS, 1):
@@ -199,7 +233,7 @@ def _step_ai_backend() -> tuple[str, str]:
 
 def _step_tts_voices() -> tuple[str, str, str]:
     """Step 3: Choose language and TTS voices. Returns (voice_en, voice_ru, primary_lang)."""
-    click.secho("🗣️  [3/7] Voice & Language", bold=True)
+    click.secho("🗣️  [4/8] Voice & Language", bold=True)
     click.echo()
 
     # Detect system locale for smart default
@@ -247,7 +281,7 @@ def _step_tts_voices() -> tuple[str, str, str]:
 
 def _step_audio_devices() -> tuple[int | None, int | None]:
     """Step 4: Choose microphone and output device."""
-    click.secho("🔊 [4/7] Audio Devices", bold=True)
+    click.secho("🔊 [5/8] Audio Devices", bold=True)
     click.echo()
 
     import sounddevice as sd
@@ -310,75 +344,185 @@ def _step_audio_devices() -> tuple[int | None, int | None]:
     return input_device, output_device
 
 
-def _step_mic_calibration(input_device: int | None) -> float | None:
-    """Step 5: Calibrate microphone gain by recording a test phrase."""
-    click.secho("🔬 [5/7] Microphone Calibration", bold=True)
-    click.echo()
-    click.echo("  Calibrates microphone gain for accurate voice recognition.")
-    click.echo("  Say any phrase in your normal voice when prompted.")
-    click.echo()
-
-    if not click.confirm("  Start calibration?", default=True):
-        click.secho("  ⏭  Skipped. Auto-gain will be used.\n", fg="yellow")
-        return None
-
+def _record_chunk(input_device, duration: float, sample_rate: int = 16000) -> "np.ndarray | None":
+    """Record audio for calibration. Returns int16 array or None on error."""
     import numpy as np
     import sounddevice as sd
 
-    sample_rate = 16000
-    duration = 3.0  # seconds
-    blocksize = 1280
+    # Use device native sample rate to avoid PortAudio errors
+    try:
+        info = sd.query_devices(input_device, "input")
+        native_sr = int(info["default_samplerate"])
+        max_ch = int(info["max_input_channels"])
+    except Exception:
+        native_sr = sample_rate
+        max_ch = 1
 
-    click.echo()
-    click.secho("  🎤 Speak now... (3 seconds)", fg="cyan", bold=True)
+    if max_ch == 0:
+        click.secho("  ⚠️  Selected device has no input channels.", fg="yellow")
+        return None
 
+    channels = min(1, max_ch)
     try:
         audio = sd.rec(
-            int(sample_rate * duration),
-            samplerate=sample_rate,
-            channels=1,
+            int(native_sr * duration),
+            samplerate=native_sr,
+            channels=channels,
             dtype="int16",
             device=input_device,
-            blocksize=blocksize,
         )
         sd.wait()
     except Exception as e:
         click.secho(f"  ⚠️  Recording error: {e}", fg="yellow")
-        click.secho("  Auto-gain will be used.\n", fg="yellow")
         return None
 
-    peak = int(np.abs(audio).max())
-    rms = float(np.sqrt(np.mean(audio.astype(np.float32) ** 2)))
+    audio = audio.flatten()
 
-    click.echo(f"  📊 Peak level: {peak} / 32767")
-    click.echo(f"  📊 RMS: {rms:.0f}")
+    # Resample to 16000 if needed
+    if native_sr != sample_rate:
+        from math import gcd
+        from scipy.signal import resample_poly
+        g = gcd(native_sr, sample_rate)
+        audio_f = resample_poly(audio.astype("float32"), sample_rate // g, native_sr // g)
+        audio = np.clip(audio_f, -32768, 32767).astype("int16")
 
-    if peak < 50:
-        click.secho("  ⚠️  No audio detected. Check your microphone connection.", fg="yellow")
-        click.secho("  Auto-gain will be used.\n", fg="yellow")
-        return None
+    return audio
 
-    # Calculate gain: target peak ~0.5 in float32 (16384 in int16)
-    target_peak = 16384
-    gain = round(target_peak / peak, 1)
-    gain = max(1.0, min(gain, 100.0))  # clamp to sane range
 
-    if gain < 1.5:
-        click.secho("  ✅ Microphone is great! No gain needed.", fg="green")
-        gain = 1.0
-    elif gain < 5.0:
-        click.secho(f"  ✅ Microphone OK. Gain: x{gain}", fg="green")
+def _step_mic_calibration(input_device: int | None) -> tuple[float | None, float, int]:
+    """Step 6: Calibrate mic — record silence + speech, set gain, VAD threshold, RMS threshold.
+
+    Returns (mic_gain, vad_threshold, rms_speech_threshold).
+    mic_gain=None means auto-gain is sufficient.
+    """
+    click.secho("🔬 [6/8] Microphone Calibration", bold=True)
+    click.echo()
+    click.echo("  Records silence and speech to calibrate VAD sensitivity.")
+    click.echo()
+
+    if not click.confirm("  Start calibration?", default=True):
+        click.secho("  ⏭  Skipped. Defaults will be used.\n", fg="yellow")
+        return None, 0.5, 300
+
+    import numpy as np
+    from openocto.utils.model_downloader import get_silero_vad_model
+
+    # Load VAD model for threshold calibration
+    try:
+        import onnxruntime as ort
+        model_path = get_silero_vad_model()
+        session = ort.InferenceSession(str(model_path))
+        sr_arr = np.array(16000, dtype=np.int64)
+        state = np.zeros((2, 1, 128), dtype=np.float32)
+        V5_WINDOW = 512
+
+        def vad_probs(audio_int16: np.ndarray) -> list[float]:
+            nonlocal state
+            state = np.zeros((2, 1, 128), dtype=np.float32)
+            audio_f = audio_int16.astype(np.float32) / 32768.0
+            probs = []
+            for offset in range(0, len(audio_f), V5_WINDOW):
+                w = audio_f[offset:offset + V5_WINDOW]
+                if len(w) < V5_WINDOW:
+                    w = np.pad(w, (0, V5_WINDOW - len(w)))
+                out, state = session.run(None, {"input": w.reshape(1, -1), "state": state, "sr": sr_arr})
+                probs.append(float(out.flat[0]))
+            return probs
+
+        vad_available = True
+    except Exception:
+        vad_available = False
+
+    # --- Phase 1: silence ---
+    click.echo()
+    click.secho("  🔇 Phase 1/2 — stay quiet... (2 seconds)", fg="yellow", bold=True)
+    silence_audio = _record_chunk(input_device, duration=2.0)
+
+    if silence_audio is None or int(np.abs(silence_audio).max()) < 10:
+        click.secho("  ⚠️  No audio detected. Check microphone.\n", fg="yellow")
+        return None, 0.5, 300
+
+    # --- Phase 2: speech ---
+    click.echo()
+    click.secho("  🎤 Phase 2/2 — get ready to speak!", fg="cyan", bold=True)
+    for i in range(3, 0, -1):
+        click.echo(f"     {i}...", nl=False)
+        import time; time.sleep(1)
+    click.echo()
+    click.secho("  🔴 Recording — speak now! (3 seconds)", fg="red", bold=True)
+    speech_audio = _record_chunk(input_device, duration=3.0)
+
+    if speech_audio is None:
+        click.secho("  ⚠️  Recording failed.\n", fg="yellow")
+        return None, 0.5, 300
+
+    # --- Compute gain ---
+    speech_peak = int(np.abs(speech_audio).max())
+    click.echo()
+    click.echo(f"  📊 Speech peak: {speech_peak} / 32767")
+
+    if speech_peak < 50:
+        click.secho("  ⚠️  Speech too quiet. Check microphone volume.\n", fg="yellow")
+        return None, 0.5, 300
+
+    target_peak = 16384  # 0.5 in float32
+    gain = round(target_peak / speech_peak, 1)
+    gain = max(1.0, min(gain, 100.0))
+    mic_gain: float | None = None if gain < 1.5 else gain
+
+    # --- Compute VAD threshold ---
+    vad_threshold = 0.3  # safe default
+    if vad_available:
+        def apply_gain(a: np.ndarray) -> np.ndarray:
+            f = a.astype(np.float32) / 32768.0
+            if mic_gain is not None:
+                return np.clip(f * mic_gain, -1.0, 1.0)
+            peak = np.abs(f).max()
+            if peak > 0.005:
+                return np.clip(f * (0.5 / peak), -1.0, 1.0)
+            return f
+
+        silence_gained = (apply_gain(silence_audio) * 32768).astype(np.int16)
+        speech_gained = (apply_gain(speech_audio) * 32768).astype(np.int16)
+
+        silence_probs = vad_probs(silence_gained)
+        speech_probs = vad_probs(speech_gained)
+
+        noise_max = max(silence_probs) if silence_probs else 0.0
+        speech_max = max(speech_probs) if speech_probs else 0.0
+
+        click.echo(f"  📊 VAD silence max: {noise_max:.3f}  |  speech max: {speech_max:.3f}")
+
+        if speech_max < 0.2:
+            click.secho("  ⚠️  VAD couldn't detect speech. Using default threshold 0.3.", fg="yellow")
+        else:
+            # Threshold = midpoint between noise ceiling and speech floor
+            speech_min = float(np.percentile(speech_probs, 25))
+            threshold = round((noise_max + speech_min) / 2, 2)
+            threshold = max(0.1, min(threshold, 0.7))
+            vad_threshold = threshold
+            click.secho(f"  ✅ VAD threshold set to {vad_threshold}", fg="green")
+
+    # --- Compute RMS speech threshold ---
+    silence_rms = float(np.sqrt(np.mean(silence_audio.astype(np.float32) ** 2)))
+    speech_rms = float(np.sqrt(np.mean(speech_audio.astype(np.float32) ** 2)))
+    # Midpoint between silence and speech, with a margin above silence
+    rms_threshold = int(silence_rms + (speech_rms - silence_rms) * 0.4)
+    rms_threshold = max(100, min(rms_threshold, 2000))
+    click.echo(f"  📊 RMS silence: {silence_rms:.0f}  |  speech: {speech_rms:.0f}  |  threshold: {rms_threshold}")
+
+    if mic_gain is None:
+        click.secho("  ✅ Microphone level is good. Auto-gain enabled.", fg="green")
     else:
-        click.secho(f"  ⚠️  Microphone is quiet. Gain: x{gain}", fg="yellow")
-        click.echo("  💡 Tip: try increasing microphone volume in your OS settings.")
+        click.secho(f"  ✅ Mic gain: x{mic_gain}", fg="green")
 
     click.echo()
-    return gain
+    return mic_gain, vad_threshold, rms_threshold
 
 
 def _step_wakeword() -> tuple[bool, str]:
     """Step 4: Choose wake word."""
-    click.secho("🎙️  [6/7] Wake Word", bold=True)
+    click.secho("🎙️  [7/8] Wake Word", bold=True)
     click.echo()
     click.echo("  The assistant listens in the background and responds to a trigger phrase.")
     click.echo("  Without wake word — hold Space to record (push-to-talk).")
@@ -441,7 +585,7 @@ def _ensure_openwakeword() -> None:
 
 def _step_whisper_model() -> str:
     """Step 2: Choose Whisper model size."""
-    click.secho("🎤 [2/7] Speech Recognition", bold=True)
+    click.secho("🎤 [3/8] Speech Recognition", bold=True)
     click.echo()
 
     models = [
@@ -464,9 +608,10 @@ def _step_whisper_model() -> str:
 def _write_config(backend: str, api_key: str, model_size: str, voice_en: str, voice_ru: str,
                   primary_lang: str, input_device, output_device,
                   wakeword_enabled: bool, wakeword_model: str,
-                  mic_gain: float | None = None) -> None:
+                  mic_gain: float | None = None, vad_threshold: float = 0.3,
+                  rms_threshold: int = 300) -> None:
     """Step 6: Write user config file."""
-    click.secho("💾 [7/7] Saving configuration", bold=True)
+    click.secho("💾 [8/8] Saving configuration", bold=True)
 
     USER_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -489,8 +634,10 @@ def _write_config(backend: str, api_key: str, model_size: str, voice_en: str, vo
     if audio_config:
         config["audio"] = audio_config
 
+    vad_config: dict = {"threshold": vad_threshold, "rms_speech_threshold": rms_threshold}
     if mic_gain is not None:
-        config.setdefault("vad", {})["mic_gain"] = mic_gain
+        vad_config["mic_gain"] = mic_gain
+    config["vad"] = vad_config
 
     if wakeword_enabled and wakeword_model:
         config["wakeword"] = {"enabled": True, "model": wakeword_model}

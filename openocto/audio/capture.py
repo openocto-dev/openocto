@@ -43,13 +43,17 @@ class AudioCapture:
         self._chunk_callback = callback
 
     def _callback(self, indata: np.ndarray, frames: int, time: object, status: object) -> None:
-        if status:
-            logger.warning("Audio capture status: %s", status)
-        if self._chunk_callback:
-            self._chunk_callback(indata.copy().flatten())
-        if self._recording:
-            with self._lock:
-                self._buffer.append(indata.copy())
+        try:
+            if status:
+                logger.warning("Audio capture status: %s", status)
+            mono = indata[:, 0] if indata.ndim > 1 else indata.flatten()
+            if self._chunk_callback:
+                self._chunk_callback(mono.copy())
+            if self._recording:
+                with self._lock:
+                    self._buffer.append(mono.copy())
+        except Exception as e:
+            logger.error("Audio callback error: %s", e)
 
     def _open_stream(self) -> None:
         self._stream = sd.InputStream(

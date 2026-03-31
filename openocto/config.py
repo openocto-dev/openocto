@@ -54,6 +54,7 @@ class VADConfig(BaseModel):
     max_recording_duration: float = 60.0
     pre_speech_buffer: float = 0.3
     mic_gain: float | None = None  # null = auto-gain, number = fixed multiplier
+    rms_speech_threshold: int = 300  # RMS level above which audio counts as speech
 
 
 class STTConfig(BaseModel):

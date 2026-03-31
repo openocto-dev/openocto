@@ -15,14 +15,12 @@ logger = logging.getLogger(__name__)
 
 
 class AIRouter:
-    """Routes requests to the configured AI backend and manages conversation history."""
+    """Routes requests to the configured AI backend."""
 
     def __init__(self, config: AIConfig) -> None:
         self._config = config
         self._backends: dict[str, AIBackend] = {}
-        self._history: list[dict] = []
         self._active_backend_name = config.default_backend
-        self._max_history = config.max_history
 
         self._init_backends()
 
@@ -90,42 +88,38 @@ class AIRouter:
         self._active_backend_name = name
         logger.info("Switched to backend: %s", name)
 
-    async def send(self, user_text: str, persona: Persona) -> str:
-        """Send a user message and get a complete response."""
-        self._history.append({"role": "user", "content": user_text})
-        self._trim_history()
+    async def send(
+        self,
+        user_text: str,
+        history: list[dict],
+        persona: Persona,
+    ) -> str:
+        """Send a user message and get a complete response.
 
+        Args:
+            user_text: the current user message.
+            history: previous messages (caller loads from DB).
+            persona: active persona (provides system_prompt).
+        """
+        messages = [*history, {"role": "user", "content": user_text}]
         backend = self.get_backend()
-        response = await backend.send(self._history.copy(), persona.system_prompt)
-
-        self._history.append({"role": "assistant", "content": response})
-        return response
+        return await backend.send(messages, persona.system_prompt)
 
     async def send_streaming(
         self,
         user_text: str,
+        history: list[dict],
         persona: Persona,
         on_chunk: Callable[[str], Awaitable[None]],
     ) -> str:
-        """Send a user message and stream the response."""
-        self._history.append({"role": "user", "content": user_text})
-        self._trim_history()
+        """Send a user message and stream the response.
 
+        Args:
+            user_text: the current user message.
+            history: previous messages (caller loads from DB).
+            persona: active persona (provides system_prompt).
+            on_chunk: callback for each streamed token.
+        """
+        messages = [*history, {"role": "user", "content": user_text}]
         backend = self.get_backend()
-        response = await backend.send_streaming(
-            self._history.copy(), persona.system_prompt, on_chunk
-        )
-
-        self._history.append({"role": "assistant", "content": response})
-        return response
-
-    def clear_history(self) -> None:
-        """Clear conversation history."""
-        self._history.clear()
-        logger.debug("Conversation history cleared")
-
-    def _trim_history(self) -> None:
-        """Keep history within max_history turns (2 messages per turn)."""
-        max_messages = self._max_history * 2
-        if len(self._history) > max_messages:
-            self._history = self._history[-max_messages:]
+        return await backend.send_streaming(messages, persona.system_prompt, on_chunk)

@@ -41,8 +41,8 @@ def start(persona: str | None, ai: str | None, config_path: str | None) -> None:
 @click.option(
     "--from-step", "-s",
     default=1,
-    type=click.IntRange(1, 7),
-    help="Start from step N (1=AI, 2=STT, 3=Voice, 4=Devices, 5=MicCalibration, 6=WakeWord, 7=Save+Download)",
+    type=click.IntRange(1, 8),
+    help="Start from step N (1=User, 2=AI, 3=STT, 4=Voice, 5=Devices, 6=MicCalibration, 7=WakeWord, 8=Save+Download)",
     show_default=True,
 )
 def setup(from_step: int) -> None:

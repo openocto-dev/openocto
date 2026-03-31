@@ -1,6 +1,5 @@
 """Tests for the AI Router with mocked backends."""
 
-import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -37,7 +36,6 @@ def make_router(config: AIConfig, mock_backend=None):
     """Create AIRouter with a mocked Claude backend."""
     mock = mock_backend or MagicMock()
     with patch("openocto.ai.claude.anthropic"):
-        # Patch the class inside the router's local import
         original_init = AIRouter._init_backends
 
         def patched_init(self):
@@ -70,17 +68,19 @@ class TestAIRouter:
             router.set_backend("unknown_backend")
 
     @pytest.mark.asyncio
-    async def test_send_adds_to_history(self, config_with_claude, mock_persona):
+    async def test_send_passes_history_and_text(self, config_with_claude, mock_persona):
         mock_backend = AsyncMock()
         mock_backend.send.return_value = "Hello, I am a test response."
         router, _ = make_router(config_with_claude, mock_backend)
 
-        response = await router.send("Hello", mock_persona)
+        history = [{"role": "user", "content": "prev"}, {"role": "assistant", "content": "prev-resp"}]
+        response = await router.send("Hello", history, mock_persona)
 
         assert response == "Hello, I am a test response."
-        assert len(router._history) == 2
-        assert router._history[0] == {"role": "user", "content": "Hello"}
-        assert router._history[1] == {"role": "assistant", "content": "Hello, I am a test response."}
+        # Backend should receive history + current message
+        sent_messages = mock_backend.send.call_args[0][0]
+        assert len(sent_messages) == 3
+        assert sent_messages[-1] == {"role": "user", "content": "Hello"}
 
     @pytest.mark.asyncio
     async def test_send_passes_system_prompt(self, config_with_claude, mock_persona):
@@ -88,13 +88,25 @@ class TestAIRouter:
         mock_backend.send.return_value = "response"
         router, _ = make_router(config_with_claude, mock_backend)
 
-        await router.send("test", mock_persona)
+        await router.send("test", [], mock_persona)
 
         call_kwargs = mock_backend.send.call_args
         assert call_kwargs[0][1] == mock_persona.system_prompt
 
     @pytest.mark.asyncio
-    async def test_send_streaming_calls_backend(self, config_with_claude, mock_persona):
+    async def test_send_with_empty_history(self, config_with_claude, mock_persona):
+        mock_backend = AsyncMock()
+        mock_backend.send.return_value = "hi"
+        router, _ = make_router(config_with_claude, mock_backend)
+
+        response = await router.send("Hello", [], mock_persona)
+        assert response == "hi"
+        sent_messages = mock_backend.send.call_args[0][0]
+        assert len(sent_messages) == 1
+        assert sent_messages[0] == {"role": "user", "content": "Hello"}
+
+    @pytest.mark.asyncio
+    async def test_send_streaming(self, config_with_claude, mock_persona):
         mock_backend = AsyncMock()
         mock_backend.send_streaming.return_value = "Streamed response."
         router, _ = make_router(config_with_claude, mock_backend)
@@ -102,24 +114,11 @@ class TestAIRouter:
         async def noop(chunk: str) -> None:
             pass
 
-        response = await router.send_streaming("Hi", mock_persona, on_chunk=noop)
+        history = [{"role": "user", "content": "hi"}, {"role": "assistant", "content": "hello"}]
+        response = await router.send_streaming("Hi", history, mock_persona, on_chunk=noop)
         assert response == "Streamed response."
-        assert router._history[-1] == {"role": "assistant", "content": "Streamed response."}
-
-    def test_clear_history(self, config_with_claude):
-        router, _ = make_router(config_with_claude)
-        router._history = [{"role": "user", "content": "test"}]
-        router.clear_history()
-        assert router._history == []
-
-    def test_history_trimmed_when_too_long(self, config_with_claude):
-        config_with_claude.max_history = 2
-        router, _ = make_router(config_with_claude)
-        for i in range(10):
-            router._history.append({"role": "user", "content": f"msg {i}"})
-            router._history.append({"role": "assistant", "content": f"resp {i}"})
-        router._trim_history()
-        assert len(router._history) == 4  # max_history=2 turns = 4 messages
+        sent_messages = mock_backend.send_streaming.call_args[0][0]
+        assert len(sent_messages) == 3
 
     def test_get_backend_returns_correct(self, config_with_claude):
         router, mock = make_router(config_with_claude)

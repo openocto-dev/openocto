@@ -6,11 +6,14 @@ import asyncio
 import logging
 import sys
 
+import numpy as np
+
 from openocto import __version__
 from openocto.audio.capture import AudioCapture
 from openocto.audio.player import AudioPlayer
 from openocto.config import AppConfig
 from openocto.event_bus import EventBus, EventType
+from openocto.history import HistoryStore
 from openocto.persona.manager import Persona, PersonaManager
 from openocto.state_machine import State, StateMachine
 
@@ -39,6 +42,10 @@ class OpenOctoApp:
         self._persona: Persona | None = None
         self._wakeword = None
         self._vad = None
+
+        # Persistent history
+        self._history_store = HistoryStore()
+        self._current_user_id: int | None = None
 
         # Processing lock (shared by PTT and wake word modes)
         self._processing = False
@@ -97,6 +104,22 @@ class OpenOctoApp:
                 print(f"\n⚠️  {e}\n")
                 print("   Falling back to push-to-talk mode.\n")
 
+        # Pick current user: last active → default → first → create new
+        user = (
+            self._history_store.get_last_active_user()
+            or self._history_store.get_default_user()
+        )
+        if user is None:
+            users = self._history_store.list_users()
+            user = users[0] if users else None
+        if user is None:
+            uid = self._history_store.create_user("User", is_default=True)
+            logger.info("Created default user (id=%d)", uid)
+        else:
+            uid = user["id"]
+        self._current_user_id = uid
+        logger.info("Active user: %s (id=%d)", user["name"] if user else "User", uid)
+
         print("✅ Ready!\n")
 
     def _detect_response_lang(self, text: str) -> str:
@@ -125,48 +148,94 @@ class OpenOctoApp:
                     self._on_wake_word_detected(), self._loop
                 )
 
-    async def _await_and_record(self, listen_timeout: float = 5.0,
-                                require_speech: bool = False) -> "np.ndarray | None":
-        """Record audio, stopping on VAD silence or listen_timeout seconds total.
+    async def _await_and_record(self, max_duration: float = 60.0,
+                                silence_after_speech: float = 3.0,
+                                no_speech_timeout: float = 10.0) -> "np.ndarray | None":
+        """Record audio with webrtcvad silence detection.
 
-        Args:
-            listen_timeout: max seconds to record.
-            require_speech: if True, return None when VAD detected no speech
-                (used by auto-listen to silently return to idle).
-                If False, always return audio and let STT decide
-                (used after wake word — user explicitly triggered).
+        Stops when ``silence_after_speech`` seconds of non-speech detected
+        after the user started talking.  Gives up after ``no_speech_timeout``
+        if no speech is detected at all.  Hard cap at ``max_duration``.
         """
+        import torch
+        from silero_vad import load_silero_vad, VADIterator
+
+        model = load_silero_vad()
+        vad_iter = VADIterator(
+            model,
+            threshold=0.5,
+            sampling_rate=self._capture.sample_rate,
+            min_silence_duration_ms=int(silence_after_speech * 1000),
+            speech_pad_ms=30,
+        )
+
         await self._state_machine.transition("start_recording")
         self._capture.start_recording()
-        self._vad.reset()
-        print("🎤 Listening...", end="\r", flush=True)
 
-        loop = asyncio.get_event_loop()
-        start = loop.time()
-        speech_ever_detected = False
+        speech_detected = False
+        speech_ended = False
         last_chunk_idx = -1
+        window = 512  # silero-vad requires 512-sample chunks at 16kHz
+        loop = asyncio.get_event_loop()
+        t0 = loop.time()
 
-        while loop.time() - start < listen_timeout:
-            result = self._capture.get_latest_chunk(after=last_chunk_idx)
-            if result is not None:
-                chunk, last_chunk_idx = result
-                speech = self._vad.is_speech(chunk)
-                if speech:
-                    speech_ever_detected = True
-                # Stop on silence only after speech has been detected
-                if speech_ever_detected and self._vad.should_stop_recording(chunk, speech=speech):
+        try:
+            while True:
+                now = loop.time()
+                elapsed = now - t0
+
+                if elapsed >= max_duration:
                     break
-            await asyncio.sleep(0.05)
 
+                if not speech_detected and elapsed >= no_speech_timeout:
+                    self._capture.stop_recording()
+                    print(" " * 60, end="\r")
+                    vad_iter.reset_states()
+                    await self._state_machine.transition("cancel")
+                    return None
+
+                if speech_ended:
+                    break
+
+                secs = int(elapsed)
+                if speech_detected:
+                    print(f"🎤 Recording... {secs}s ", end="\r", flush=True)
+                else:
+                    print(f"🎤 Listening... {secs}s ", end="\r", flush=True)
+
+                # Feed new audio to VADIterator in 512-sample chunks
+                while True:
+                    result = self._capture.get_latest_chunk(after=last_chunk_idx)
+                    if result is None:
+                        break
+                    chunk, last_chunk_idx = result
+
+                    # Convert int16 → float32 [-1, 1]
+                    audio_f32 = chunk.astype(np.float32) / 32768.0
+
+                    for i in range(0, len(audio_f32) - window + 1, window):
+                        frame = torch.from_numpy(audio_f32[i:i + window])
+                        event = vad_iter(frame, return_seconds=True)
+                        if event:
+                            if "start" in event:
+                                speech_detected = True
+                            elif "end" in event:
+                                speech_ended = True
+                                break
+                    if speech_ended:
+                        break
+
+                await asyncio.sleep(0.05)
+        except Exception:
+            self._capture.stop_recording()
+            vad_iter.reset_states()
+            raise
+
+        vad_iter.reset_states()
         audio = self._capture.stop_recording()
         print(" " * 60, end="\r")
 
         if audio.size == 0:
-            await self._state_machine.transition("cancel")
-            return None
-
-        # Auto-listen mode: no speech detected → quiet return to idle
-        if require_speech and not speech_ever_detected:
             await self._state_machine.transition("cancel")
             return None
 
@@ -183,9 +252,9 @@ class OpenOctoApp:
         await asyncio.sleep(0.15)  # let beep finish before VAD starts
 
         try:
-            audio = await self._await_and_record(listen_timeout=5.0)
+            audio = await self._await_and_record()
             if audio is None:
-                return  # no speech within 5s — back to idle, wake word resumes
+                return  # no speech detected — back to idle, wake word resumes
             await self._handle_audio(audio)
         except Exception as e:
             logger.exception("Wake word pipeline error")
@@ -209,15 +278,9 @@ class OpenOctoApp:
             self._player.beep(freq=660.0, duration=0.10)  # lower pitch = "ready"
             await asyncio.sleep(0.15)
 
-            audio = await self._await_and_record(listen_timeout=5.0)
+            audio = await self._await_and_record(no_speech_timeout=5.0)
             if audio is None:
-                return  # empty recording — wake word mode resumes
-            # RMS check: skip STT on quiet audio (noise has low RMS even with peak spikes)
-            import numpy as np
-            rms = float(np.sqrt(np.mean(audio.astype(np.float32) ** 2)))
-            if rms < 150:
-                await self._state_machine.transition("cancel")
-                return  # silence — wake word mode resumes
+                return  # no speech detected — wake word mode resumes
             await self._handle_audio(audio, silent=True)
         except Exception as e:
             logger.exception("Auto-listen error")
@@ -280,6 +343,17 @@ class OpenOctoApp:
             print(f"You [{result.language}]: {result.text}")
             await self._state_machine.transition("transcription_done")
 
+            # Persist user message & load history
+            persona_name = self._persona.name
+            uid = self._current_user_id
+            self._history_store.add_message(
+                uid, persona_name, "user", result.text,
+                language=result.language,
+            )
+            history = self._history_store.get_recent_messages(
+                uid, persona_name, limit=self._config.ai.max_history,
+            )
+
             # AI response
             response_chunks: list[str] = []
             got_first_chunk = False
@@ -303,13 +377,19 @@ class OpenOctoApp:
                 print(chunk, end="", flush=True)
 
             response = await self._ai_router.send_streaming(
-                result.text, self._persona, on_chunk
+                result.text, history, self._persona, on_chunk
             )
             if not spinner.done():
                 spinner.cancel()
             if not got_first_chunk:
                 print("\rOcto: ", end="", flush=True)
             print()  # newline after streamed response
+
+            # Persist assistant response
+            self._history_store.add_message(
+                uid, persona_name, "assistant", response,
+                backend=self._ai_router.active_backend_name,
+            )
 
             await self._event_bus.publish(EventType.AI_RESPONSE, {"text": response})
             await self._state_machine.transition("response_ready")
