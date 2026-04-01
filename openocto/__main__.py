@@ -21,8 +21,9 @@ def main(ctx: click.Context) -> None:
 @main.command()
 @click.option("--persona", default=None, help="Persona name (default: from config)")
 @click.option("--ai", default=None, help="AI backend: claude, claude-proxy, openai, etc.")
+@click.option("--user", "user_name", default=None, help="User name to run as (skips prompt when multiple users exist)")
 @click.option("--config", "config_path", default=None, help="Path to config file")
-def start(persona: str | None, ai: str | None, config_path: str | None) -> None:
+def start(persona: str | None, ai: str | None, user_name: str | None, config_path: str | None) -> None:
     """Start OpenOcto voice assistant."""
     import asyncio
     from openocto.app import OpenOctoApp
@@ -33,7 +34,7 @@ def start(persona: str | None, ai: str | None, config_path: str | None) -> None:
     if ai:
         config.ai.default_backend = ai
 
-    app = OpenOctoApp(config)
+    app = OpenOctoApp(config, user_name=user_name)
     asyncio.run(app.run())
 
 

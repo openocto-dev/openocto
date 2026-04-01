@@ -27,6 +27,8 @@ dependencies = [
     "tqdm>=4.64",
     "anthropic>=0.40",
     "openai>=1.0",
+    "questionary>=2.0",
+    "silero-vad>=6.0",
 ]
 
 [project.optional-dependencies]

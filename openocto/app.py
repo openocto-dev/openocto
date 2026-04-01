@@ -23,8 +23,9 @@ logger = logging.getLogger(__name__)
 class OpenOctoApp:
     """Main application — wires all components together and runs the main loop."""
 
-    def __init__(self, config: AppConfig) -> None:
+    def __init__(self, config: AppConfig, user_name: str | None = None) -> None:
         self._config = config
+        self._requested_user_name = user_name
 
         # Core infrastructure
         self._event_bus = EventBus()
@@ -50,6 +51,54 @@ class OpenOctoApp:
         # Processing lock (shared by PTT and wake word modes)
         self._processing = False
         self._loop: asyncio.AbstractEventLoop | None = None
+
+    def _resolve_user(self) -> tuple[int, str]:
+        """Return (user_id, user_name) based on --user flag or interactive selection."""
+        users = self._history_store.list_users()
+
+        # --user NAME given explicitly
+        if self._requested_user_name:
+            user = self._history_store.get_user_by_name(self._requested_user_name)
+            if user is None:
+                raise SystemExit(
+                    f"❌ User '{self._requested_user_name}' not found. "
+                    f"Available: {', '.join(u['name'] for u in users) or 'none'}"
+                )
+            return user["id"], user["name"]
+
+        # No users yet — create a default one silently
+        if not users:
+            uid = self._history_store.create_user("User", is_default=True)
+            return uid, "User"
+
+        # One user — auto-select
+        if len(users) == 1:
+            u = users[0]
+            return u["id"], u["name"]
+
+        # Multiple users — show last-active first, prompt with arrow keys
+        last_active = self._history_store.get_last_active_user()
+        if last_active:
+            users = [last_active] + [u for u in users if u["id"] != last_active["id"]]
+
+        import questionary
+
+        choices = [
+            questionary.Choice(
+                title=u["name"] + (" (last active)" if last_active and u["id"] == last_active["id"] else ""),
+                value=u,
+            )
+            for u in users
+        ]
+        selected = questionary.select(
+            "👤 Multiple users — who are you?",
+            choices=choices,
+        ).ask()
+
+        if selected is None:
+            raise SystemExit("Cancelled.")
+
+        return selected["id"], selected["name"]
 
     def _init_components(self) -> None:
         """Initialize heavy components (downloads models if needed)."""
@@ -104,21 +153,10 @@ class OpenOctoApp:
                 print(f"\n⚠️  {e}\n")
                 print("   Falling back to push-to-talk mode.\n")
 
-        # Pick current user: last active → default → first → create new
-        user = (
-            self._history_store.get_last_active_user()
-            or self._history_store.get_default_user()
-        )
-        if user is None:
-            users = self._history_store.list_users()
-            user = users[0] if users else None
-        if user is None:
-            uid = self._history_store.create_user("User", is_default=True)
-            logger.info("Created default user (id=%d)", uid)
-        else:
-            uid = user["id"]
+        # Pick current user
+        uid, uname = self._resolve_user()
         self._current_user_id = uid
-        logger.info("Active user: %s (id=%d)", user["name"] if user else "User", uid)
+        logger.info("Active user: %s (id=%d)", uname, uid)
 
         print("✅ Ready!\n")
 

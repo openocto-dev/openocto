@@ -61,7 +61,8 @@ Octo: I don't have access to real-time weather data, but you can check weather.c
 ### CLI Commands
 
 ```bash
-openocto start                        # default persona and AI (Claude)
+openocto start                        # start assistant (auto-selects user if only one)
+openocto start --user Dmitry          # start as a specific user (skips prompt)
 openocto start --persona octo         # specify persona
 openocto start --ai claude-proxy      # use Claude subscription (via proxy)
 openocto start --ai openai            # use OpenAI
@@ -69,6 +70,26 @@ openocto setup                        # re-run the setup wizard
 openocto config show                  # show resolved configuration
 openocto --version
 ```
+
+#### Multi-user
+
+If multiple users are set up, `openocto start` will prompt you to choose:
+
+```
+👤 Multiple users — who are you?
+  1. Dmitry (last active)
+  2. Anna
+
+Enter number [1]:
+```
+
+To skip the prompt, pass `--user`:
+
+```bash
+openocto start --user Anna
+```
+
+Each user has their own conversation history per persona.
 
 ## Requirements
 
@@ -250,5 +271,6 @@ See [BRAND.md](BRAND.md) for usage guidelines.
 
 [Business Source License 1.1](LICENSE.md) — free for personal and non-commercial use. Converts to Apache 2.0 on 2030-03-30.
 
+**Website:** [openocto.dev](https://openocto.dev)
 **Author:** [Rocket Dev](https://rocketdev.tech)
 **Maintainer:** Dmitry Rman ([@Dmitry-rman](https://github.com/Dmitry-rman))
