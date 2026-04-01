@@ -56,14 +56,32 @@ class AudioCapture:
             logger.error("Audio callback error: %s", e)
 
     def _open_stream(self) -> None:
-        self._stream = sd.InputStream(
-            samplerate=self._sample_rate,
-            channels=CHANNELS,
-            dtype=DTYPE,
-            blocksize=self._blocksize,
-            device=self._input_device,
-            callback=self._callback,
-        )
+        try:
+            self._stream = sd.InputStream(
+                samplerate=self._sample_rate,
+                channels=CHANNELS,
+                dtype=DTYPE,
+                blocksize=self._blocksize,
+                device=self._input_device,
+                callback=self._callback,
+            )
+        except sd.PortAudioError as e:
+            if self._input_device is not None:
+                logger.warning(
+                    "Failed to open device %s (%s), falling back to default device",
+                    self._input_device, e,
+                )
+                self._input_device = None
+                self._stream = sd.InputStream(
+                    samplerate=self._sample_rate,
+                    channels=CHANNELS,
+                    dtype=DTYPE,
+                    blocksize=self._blocksize,
+                    device=None,
+                    callback=self._callback,
+                )
+            else:
+                raise
         self._stream.start()
 
     # --- Wake word mode: keep stream always-on, control buffering separately ---
