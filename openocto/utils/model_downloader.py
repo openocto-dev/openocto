@@ -218,12 +218,13 @@ def get_silero_tts_model(lang: str = "ru") -> Path:
 
 # Wake word models
 # Built-in models are bundled with openwakeword — no download needed.
-# Custom models (e.g. hey_octo) must be downloaded from our release server.
+# Custom models (e.g. octo) must be downloaded from our release server.
 WAKE_WORD_MODELS: dict[str, dict] = {
-    "hey_octo_v0.1": {
-        "url": "https://huggingface.co/openocto-dev/openocto-models/resolve/main/wakeword/hey_octo_v0.1.onnx",
-        "filename": "hey_octo_v0.1.onnx",
+    "octo_v0.1": {
+        "url": "https://huggingface.co/openocto-dev/openocto-models/resolve/main/octo_v0.1.onnx",
+        "filename": "octo_v0.1.onnx",
         "builtin": False,
+        "description": "Octo — custom wake word for OpenOcto",
     },
     "hey_jarvis_v0.1": {"builtin": True},
     "alexa_v0.1": {"builtin": True},
@@ -246,7 +247,7 @@ def get_wake_word_model(model_name: str) -> Path | None:
 
     dest = MODELS_DIR / "wakeword" / info["filename"]
     if not dest.exists():
-        print(f"⬇️  Downloading wake word model: {info['filename']}...")
+        print(f"⬇️  Downloading wake word model: {model_name}...")
         try:
             _download_file(info["url"], dest, desc=info["filename"])
         except Exception as e:

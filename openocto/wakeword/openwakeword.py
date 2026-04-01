@@ -25,7 +25,7 @@ def _ensure_builtin_downloaded(model_name: str) -> None:
     """
     try:
         from openwakeword.utils import download_models
-        print(f"⬇️  Downloading wake word models (first run)...")
+        print(f"⬇️  Downloading wake word feature models...")
         download_models(model_names=[model_name])
     except Exception as e:
         logger.warning("Failed to download openwakeword models: %s", e)
@@ -36,7 +36,7 @@ class OpenWakeWordDetector(WakeWordDetector):
 
     Requires: pip install openocto[wakeword]
     Built-in models: hey_jarvis_v0.1, alexa_v0.1, hey_mycroft_v0.1, hey_rhasspy_v0.1
-    Custom models:   hey_octo_v0.1 (downloaded from openocto-dev HuggingFace)
+    Custom models:   octo_v0.1 (downloaded from openocto-dev HuggingFace)
     """
 
     def __init__(self, config: WakeWordConfig) -> None:
@@ -82,10 +82,11 @@ class OpenWakeWordDetector(WakeWordDetector):
                 )
 
         # Built-in model (or custom model unavailable) — load by name.
-        builtin_name = config.model if not is_custom else BUILTIN_FALLBACK
-        if is_custom and model_path is None:
-            print(f"⚠️  Wake word model '{config.model}' not available yet — using {BUILTIN_FALLBACK} instead.")
+        if is_custom:
+            print(f"⚠️  Wake word model '{config.model}' not available — using {BUILTIN_FALLBACK} instead.")
             builtin_name = BUILTIN_FALLBACK
+        else:
+            builtin_name = config.model
 
         self._model_name = builtin_name
         self._oww = Model(wakeword_models=[builtin_name], inference_framework="onnx")

@@ -16,7 +16,7 @@ audio:
 # Wake word detection
 wakeword:
   enabled: false           # true = always-on wake word, false = push-to-talk (Space)
-  model: "hey_octo_v0.1"  # OpenWakeWord model — "hey_octo_v0.1" (custom) or built-in: hey_jarvis_v0.1, alexa_v0.1, hey_mycroft_v0.1
+  model: "octo_v0.1"      # OpenWakeWord model — "octo_v0.1" (custom) or built-in: hey_jarvis_v0.1, alexa_v0.1, hey_mycroft_v0.1
   threshold: 0.15
   cooldown: 2.0            # seconds between detections
 

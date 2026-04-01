@@ -7,6 +7,7 @@ import shutil
 from pathlib import Path
 
 import click
+import questionary
 import yaml
 
 from openocto.config import USER_CONFIG_DIR, USER_CONFIG_PATH, MODELS_DIR
@@ -25,7 +26,7 @@ TTS_VOICES_EN = [
 ]
 
 WAKE_WORD_OPTIONS = [
-    ("hey_octo_v0.1",    "Hey Octo!       ⭐ recommended"),
+    ("octo_v0.1",        "Hi Octo         ⭐ recommended"),
     ("hey_jarvis_v0.1",  "Hey Jarvis      (built-in)"),
     ("alexa_v0.1",       "Alexa           (built-in)"),
     ("hey_mycroft_v0.1", "Hey Mycroft     (built-in)"),
@@ -40,8 +41,8 @@ SILERO_SPEAKERS_RU = [
 
 # Available AI backends for the wizard
 AI_BACKENDS = [
-    ("claude", "Claude API (requires ANTHROPIC_API_KEY)"),
     ("claude-proxy", "Claude via subscription (local proxy, no API key)"),
+    ("claude", "Claude API (requires ANTHROPIC_API_KEY)"),
     ("openai", "OpenAI (requires OPENAI_API_KEY)"),
 ]
 
@@ -191,22 +192,19 @@ def _step_ai_backend() -> tuple[str, str]:
     click.secho("🤖 [2/8] AI Brain", bold=True)
     click.echo()
 
-    for i, (key, desc) in enumerate(AI_BACKENDS, 1):
-        click.echo(f"  {i}. {desc}")
-    click.echo(f"  {len(AI_BACKENDS) + 1}. ⏭  Skip (configure later)")
-    click.echo()
+    choices = [
+        questionary.Choice(title=desc, value=key)
+        for key, desc in AI_BACKENDS
+    ] + [questionary.Choice(title="⏭  Skip (configure later)", value="skip")]
 
-    choice = click.prompt(
-        "  Choose",
-        type=click.IntRange(1, len(AI_BACKENDS) + 1),
-        default=1,
-    )
+    backend = questionary.select("  Choose AI backend:", choices=choices, default=choices[0]).ask()
 
-    if choice > len(AI_BACKENDS):
+    if backend is None:
+        raise SystemExit("Cancelled.")
+
+    if backend == "skip":
         click.secho("  ⏭  Skipped. Configure later in ~/.openocto/config.yaml\n", fg="yellow")
         return "claude", ""
-
-    backend, _ = AI_BACKENDS[choice - 1]
     api_key = ""
 
     env_var = BACKEND_ENV_KEYS.get(backend)
@@ -244,36 +242,33 @@ def _step_tts_voices() -> tuple[str, str, str]:
     else:
         default_lang = 1
 
-    click.echo("  🌍 Primary language:")
-    click.echo("    1. 🇺🇸  English")
-    click.echo("    2. 🇷🇺  Russian")
-    click.echo("    3. 🌐  Both (bilingual — auto-detect)")
+    lang_choices = [
+        questionary.Choice(title="🇺🇸  English", value="en"),
+        questionary.Choice(title="🇷🇺  Russian", value="ru"),
+        questionary.Choice(title="🌐  Both (bilingual — auto-detect)", value="auto"),
+    ]
+    default_val = "ru" if default_lang == 2 else "en"
+    primary_lang = questionary.select("  🌍 Primary language:", choices=lang_choices, default=default_val).ask()
+    if primary_lang is None:
+        raise SystemExit("Cancelled.")
     click.echo()
-    lang_choice = click.prompt("  Choose", type=click.IntRange(1, 3), default=default_lang)
-    click.echo()
-
-    primary_lang = {1: "en", 2: "ru", 3: "auto"}[lang_choice]
 
     # Defaults
     voice_en = TTS_VOICES_EN[0][0]
     voice_ru = SILERO_SPEAKERS_RU[0][0]
 
-    if lang_choice in (1, 3):
-        click.echo("  🔊 English voice:")
-        for i, (key, desc) in enumerate(TTS_VOICES_EN, 1):
-            click.echo(f"    {i}. {desc}")
-        click.echo()
-        choice = click.prompt("  Choose", type=click.IntRange(1, len(TTS_VOICES_EN)), default=1)
-        voice_en = TTS_VOICES_EN[choice - 1][0]
+    if primary_lang in ("en", "auto"):
+        en_choices = [questionary.Choice(title=desc, value=key) for key, desc in TTS_VOICES_EN]
+        voice_en = questionary.select("  🔊 English voice:", choices=en_choices, default=en_choices[0]).ask()
+        if voice_en is None:
+            raise SystemExit("Cancelled.")
         click.echo()
 
-    if lang_choice in (2, 3):
-        click.echo("  🔊 Russian voice (Silero TTS):")
-        for i, (key, desc) in enumerate(SILERO_SPEAKERS_RU, 1):
-            click.echo(f"    {i}. {desc}")
-        click.echo()
-        choice = click.prompt("  Choose", type=click.IntRange(1, len(SILERO_SPEAKERS_RU)), default=1)
-        voice_ru = SILERO_SPEAKERS_RU[choice - 1][0]
+    if primary_lang in ("ru", "auto"):
+        ru_choices = [questionary.Choice(title=desc, value=key) for key, desc in SILERO_SPEAKERS_RU]
+        voice_ru = questionary.select("  🔊 Russian voice (Silero TTS):", choices=ru_choices, default=ru_choices[0]).ask()
+        if voice_ru is None:
+            raise SystemExit("Cancelled.")
         click.echo()
 
     return voice_en, voice_ru, primary_lang
@@ -304,33 +299,23 @@ def _step_audio_devices() -> tuple[str | None, str | None]:
         return f"{d['name']}{tag}"
 
     # --- Microphone ---
-    click.echo("  🎤 Microphone (input):")
-    click.echo(f"    0. System default")
-    for n, (i, d) in enumerate(inputs, 1):
-        click.echo(f"    {n}. {_device_label(i, d)}")
-    click.echo()
-
-    mic_choice = click.prompt("  Choose microphone", type=click.IntRange(0, len(inputs)), default=0)
-    input_device = None if mic_choice == 0 else inputs[mic_choice - 1][1]["name"]
-    if input_device is not None:
-        click.secho(f"  ✅ Microphone: {input_device}", fg="green")
-    else:
-        click.secho("  ✅ Microphone: system default", fg="green")
+    mic_choices = [questionary.Choice(title="System default", value=None)] + [
+        questionary.Choice(title=_device_label(i, d), value=d["name"])
+        for i, d in inputs
+    ]
+    input_device = questionary.select("  🎤 Microphone (input):", choices=mic_choices, default=mic_choices[0]).ask()
+    if input_device is questionary.Choice:
+        raise SystemExit("Cancelled.")
+    click.secho(f"  ✅ Microphone: {input_device or 'system default'}", fg="green")
     click.echo()
 
     # --- Speaker ---
-    click.echo("  🔈 Speaker (output):")
-    click.echo(f"    0. System default")
-    for n, (i, d) in enumerate(outputs, 1):
-        click.echo(f"    {n}. {_device_label(i, d)}")
-    click.echo()
-
-    spk_choice = click.prompt("  Choose speaker", type=click.IntRange(0, len(outputs)), default=0)
-    output_device = None if spk_choice == 0 else outputs[spk_choice - 1][1]["name"]
-    if output_device is not None:
-        click.secho(f"  ✅ Speaker: {output_device}", fg="green")
-    else:
-        click.secho("  ✅ Speaker: system default", fg="green")
+    spk_choices = [questionary.Choice(title="System default", value=None)] + [
+        questionary.Choice(title=_device_label(i, d), value=d["name"])
+        for i, d in outputs
+    ]
+    output_device = questionary.select("  🔈 Speaker (output):", choices=spk_choices, default=spk_choices[0]).ask()
+    click.secho(f"  ✅ Speaker: {output_device or 'system default'}", fg="green")
     click.echo()
 
     if input_device is not None or output_device is not None:
@@ -533,13 +518,10 @@ def _step_wakeword() -> tuple[bool, str]:
         return False, ""
 
     click.echo()
-    click.echo("  Trigger phrase:")
-    for i, (key, desc) in enumerate(WAKE_WORD_OPTIONS, 1):
-        click.echo(f"    {i}. {desc}")
-    click.echo()
-
-    choice = click.prompt("  Choose", type=click.IntRange(1, len(WAKE_WORD_OPTIONS)), default=1)
-    wakeword_model = WAKE_WORD_OPTIONS[choice - 1][0]
+    ww_choices = [questionary.Choice(title=desc, value=key) for key, desc in WAKE_WORD_OPTIONS]
+    wakeword_model = questionary.select("  Trigger phrase:", choices=ww_choices, default=ww_choices[0]).ask()
+    if wakeword_model is None:
+        raise SystemExit("Cancelled.")
     click.echo()
 
     _ensure_openwakeword()
@@ -595,12 +577,13 @@ def _step_whisper_model() -> str:
         ("medium", "1.5 GB", "🏆 Best accuracy, slower"),
     ]
 
-    for i, (name, size, desc) in enumerate(models, 1):
-        click.echo(f"  {i}. {name:8s} [{size:>6s}]  {desc}")
-    click.echo()
-
-    choice = click.prompt("  Choose", type=click.IntRange(1, 4), default=3)
-    model_size = models[choice - 1][0]
+    whisper_choices = [
+        questionary.Choice(title=f"{name:8s} [{size:>6s}]  {desc}", value=name)
+        for name, size, desc in models
+    ]
+    model_size = questionary.select("  Choose model:", choices=whisper_choices, default="small").ask()
+    if model_size is None:
+        raise SystemExit("Cancelled.")
     click.echo()
     return model_size
 

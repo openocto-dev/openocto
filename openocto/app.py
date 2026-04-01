@@ -518,8 +518,7 @@ class OpenOctoApp:
         """Always-on microphone, wake word triggers recording."""
         self._capture.start_stream()
         print(header)
-        wake_phrase = self._config.wakeword.model.replace("_v0.", " v0.").replace("_", " ").title().rsplit(" V0", 1)[0]
-        print(f"   Say '{wake_phrase}' to activate | [Ctrl+C] to quit\n")
+        print(f"   Say 'Hi Octo' to activate | [Ctrl+C] to quit\n")
         try:
             while True:
                 await asyncio.sleep(0.1)
