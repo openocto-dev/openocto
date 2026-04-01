@@ -3,10 +3,10 @@
 Open-source personal AI assistant constructor with voice control and persona system.
 
 > Hold [Space] → speak → get a voice response. Fully local audio processing. Your voice never leaves the device.
-> Wake word detection ("Hey Hestia") coming in Phase 2.
 
 ## Features
 
+- **Wake word detection** — say "Hi Octo" or "Hey Octo" to activate hands-free (powered by [openWakeWord](https://github.com/dscripka/openWakeWord))
 - **Push-to-talk** voice input (hold Space)
 - **Local STT** via [whisper.cpp](https://github.com/ggerganov/whisper.cpp) — auto-detects language (30+ languages supported)
 - **Local TTS** via [piper-tts](https://github.com/rhasspy/piper) — natural voices in English, Spanish, French, and more
@@ -178,6 +178,31 @@ ai:
 | `base` | 142MB | Fast | Medium |
 | `small` | 466MB | ~2s/10s audio | Good (default) |
 | `medium` | 1.5GB | ~3s/10s audio | High |
+
+## Wake Word
+
+Enable hands-free activation in `~/.openocto/config.yaml`:
+
+```yaml
+wakeword:
+  enabled: true
+  model: octo_v0.1     # responds to "Hi Octo", "Hey Octo", "Ok Octo"
+  threshold: 0.5       # lower = more sensitive (0.1–0.9)
+```
+
+The `octo_v0.1` model is downloaded automatically on first run from [openocto-dev/openocto-models](https://huggingface.co/openocto-dev/openocto-models).
+
+You can also use any built-in openWakeWord model:
+
+```yaml
+wakeword:
+  enabled: true
+  model: alexa_v0.1    # built-in, no download needed
+```
+
+### Train your own wake word
+
+Want a custom wake word? Use **[openocto-wakeword](https://github.com/openocto-dev/openocto-wakeword)** — a toolkit for training ONNX wake word models on **Apple Silicon (Mac M1/M2/M3/M4)**, no CUDA required.
 
 ## Personas
 
