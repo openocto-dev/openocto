@@ -19,7 +19,9 @@ class AudioPlayer:
     """Plays audio through the default (or configured) output device."""
 
     def __init__(self, config: AudioConfig | None = None) -> None:
-        self._output_device = config.output_device if config else None
+        from openocto.audio.capture import _resolve_device
+        raw = config.output_device if config else None
+        self._output_device = _resolve_device(raw, kind="output")
         self._playing = False
         self._stop_event = threading.Event()
 

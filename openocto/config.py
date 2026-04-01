@@ -41,8 +41,8 @@ def _resolve_env_recursive(data: dict | list | str) -> dict | list | str:
 
 
 class AudioConfig(BaseModel):
-    input_device: int | None = None
-    output_device: int | None = None
+    input_device: int | str | None = None   # index or substring of device name
+    output_device: int | str | None = None  # index or substring of device name
     sample_rate: int = 16000
     blocksize: int = 1280
 

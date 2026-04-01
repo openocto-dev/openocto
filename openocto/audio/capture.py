@@ -20,13 +20,37 @@ DTYPE = "int16"
 BLOCKSIZE = 1280  # 80ms chunks
 
 
+def _resolve_device(device: int | str | None, kind: str) -> int | None:
+    """Resolve a device name substring to its index.
+
+    If ``device`` is already an int or None, return as-is.
+    If it's a string, search for the first device whose name contains it
+    (case-insensitive) and has at least one channel of the requested kind.
+    Logs a warning and returns None (system default) if not found.
+    """
+    if device is None or isinstance(device, int):
+        return device
+
+    max_ch_key = "max_input_channels" if kind == "input" else "max_output_channels"
+    devices = sd.query_devices()
+    needle = device.lower()
+    for idx, info in enumerate(devices):
+        if needle in info["name"].lower() and info[max_ch_key] > 0:
+            logger.info("Resolved %s device %r → #%d (%s)", kind, device, idx, info["name"])
+            return idx
+
+    logger.warning("Audio %s device %r not found, using system default", kind, device)
+    return None
+
+
 class AudioCapture:
     """Captures audio from the default (or configured) microphone."""
 
     def __init__(self, config: AudioConfig | None = None) -> None:
         self._sample_rate = config.sample_rate if config else SAMPLE_RATE
         self._blocksize = config.blocksize if config else BLOCKSIZE
-        self._input_device = config.input_device if config else None
+        raw = config.input_device if config else None
+        self._input_device = _resolve_device(raw, kind="input")
 
         self._buffer: list[np.ndarray] = []
         self._lock = threading.Lock()
