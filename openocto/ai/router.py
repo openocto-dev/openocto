@@ -87,6 +87,23 @@ class AIRouter:
         self._active_backend_name = name
         logger.info("Switched to backend: %s", name)
 
+    async def health_check(self) -> tuple[bool, str]:
+        """Send a tiny test request to the active backend.
+
+        Returns (ok, message).
+        """
+        backend = self.get_backend()
+        try:
+            response = await backend.send(
+                [{"role": "user", "content": "Hi"}],
+                "Reply with one word: OK",
+            )
+            if response and response.strip():
+                return True, f"{self._active_backend_name} is working"
+            return False, f"{self._active_backend_name} returned empty response"
+        except Exception as e:
+            return False, f"{self._active_backend_name}: {e}"
+
     async def send(
         self,
         user_text: str,

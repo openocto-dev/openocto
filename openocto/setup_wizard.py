@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import os
 import shutil
+import sys
+import threading
+import time
 from pathlib import Path
 
 import click
@@ -11,6 +14,48 @@ import questionary
 import yaml
 
 from openocto.config import USER_CONFIG_DIR, USER_CONFIG_PATH, MODELS_DIR
+
+
+class Spinner:
+    """Simple CLI spinner for long-running operations."""
+
+    FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+
+    def __init__(self, message: str = "") -> None:
+        self._message = message
+        self._running = False
+        self._thread: threading.Thread | None = None
+
+    def start(self) -> "Spinner":
+        self._running = True
+        self._thread = threading.Thread(target=self._spin, daemon=True)
+        self._thread.start()
+        return self
+
+    def stop(self, final: str = "") -> None:
+        self._running = False
+        if self._thread:
+            self._thread.join()
+        # Clear spinner line
+        sys.stderr.write(f"\r\033[K")
+        sys.stderr.flush()
+        if final:
+            click.echo(final)
+
+    def _spin(self) -> None:
+        i = 0
+        while self._running:
+            frame = self.FRAMES[i % len(self.FRAMES)]
+            sys.stderr.write(f"\r  {frame} {self._message}")
+            sys.stderr.flush()
+            i += 1
+            time.sleep(0.08)
+
+    def __enter__(self) -> "Spinner":
+        return self.start()
+
+    def __exit__(self, *_: object) -> None:
+        self.stop()
 
 
 # Available TTS voices for the wizard
@@ -53,6 +98,23 @@ BACKEND_ENV_KEYS: dict[str, str] = {
 }
 
 
+def _detect_primary_lang() -> str:
+    """Detect primary language from system locale."""
+    import locale
+    sys_locale = (locale.getdefaultlocale()[0] or "en").lower()
+    return "ru" if sys_locale.startswith("ru") else "en"
+
+
+# Recommended defaults for quick setup
+QUICK_DEFAULTS = {
+    "model_size": "small",
+    "voice_en": TTS_VOICES_EN[0][0],      # lessac-high
+    "voice_ru": SILERO_SPEAKERS_RU[0][0],  # xenia
+    "wakeword_enabled": True,
+    "wakeword_model": "octo_v0.1",
+}
+
+
 def run_setup(from_step: int = 1) -> None:
     """Run the interactive setup wizard, optionally starting from a specific step."""
     click.echo()
@@ -61,7 +123,83 @@ def run_setup(from_step: int = 1) -> None:
 
     if from_step > 1:
         click.secho(f"   ⏩ Starting from step {from_step}/8\n", fg="yellow")
+        return _run_custom_setup(from_step)
 
+    # First-time setup: offer quick vs custom
+    primary_lang = _detect_primary_lang()
+    lang_label = {"en": "English", "ru": "Russian"}.get(primary_lang, primary_lang)
+
+    click.secho("  How would you like to set up?", bold=True)
+    click.echo()
+    click.echo(f"  ⚡ Quick — recommended settings, wake word \"Hi Octo\",")
+    click.echo(f"     {lang_label} language, just choose AI backend")
+    click.echo(f"  🔧 Custom — configure each step manually")
+    click.echo()
+
+    setup_mode = questionary.select(
+        "  Setup mode:",
+        choices=[
+            questionary.Choice(title="⚡ Quick setup (recommended)", value="quick"),
+            questionary.Choice(title="🔧 Custom setup", value="custom"),
+        ],
+        default="quick",
+    ).ask()
+    if setup_mode is None:
+        raise SystemExit("Cancelled.")
+    click.echo()
+
+    if setup_mode == "quick":
+        _run_quick_setup(primary_lang)
+    else:
+        _run_custom_setup(from_step=1)
+
+
+def _run_quick_setup(primary_lang: str) -> None:
+    """Quick setup: user + AI backend, everything else is recommended defaults."""
+    # Step 1: Create user
+    user_name = _step_create_user()
+
+    # Step 2: AI backend (always ask — needs API key)
+    backend, api_key = _step_ai_backend()
+
+    # Everything else: recommended defaults
+    model_size = QUICK_DEFAULTS["model_size"]
+    voice_en = QUICK_DEFAULTS["voice_en"]
+    voice_ru = QUICK_DEFAULTS["voice_ru"]
+    wakeword_enabled = QUICK_DEFAULTS["wakeword_enabled"]
+    wakeword_model = QUICK_DEFAULTS["wakeword_model"]
+    input_device = None
+    output_device = None
+    mic_gain = None
+    vad_threshold = 0.3
+    rms_threshold = 300
+
+    click.secho("  Recommended settings:", bold=True)
+    click.echo(f"  ✅ Language: {primary_lang}")
+    click.echo(f"  ✅ STT: whisper-{model_size}")
+    click.echo(f"  ✅ Voice EN: {voice_en}")
+    click.echo(f"  ✅ Voice RU: {voice_ru} (Silero)")
+    click.echo(f"  ✅ Audio: system default")
+    click.echo(f"  ✅ Wake word: Hi Octo")
+    click.echo()
+
+    # Ensure openwakeword is installed
+    _ensure_openwakeword()
+
+    # Write config
+    _write_config(backend, api_key, model_size, voice_en, voice_ru, primary_lang,
+                  input_device, output_device, wakeword_enabled, wakeword_model,
+                  mic_gain, vad_threshold, rms_threshold)
+
+    # Download models
+    _step_download_models(model_size, voice_en, voice_ru, primary_lang,
+                          wakeword_enabled, wakeword_model)
+
+    _finish()
+
+
+def _run_custom_setup(from_step: int = 1) -> None:
+    """Custom setup: walk through all steps with choices."""
     # Load existing config values as defaults for skipped steps
     existing = _load_existing_config()
 
@@ -135,7 +273,11 @@ def run_setup(from_step: int = 1) -> None:
     _step_download_models(model_size, voice_en, voice_ru, primary_lang,
                           wakeword_enabled, wakeword_model)
 
-    # Done
+    _finish()
+
+
+def _finish() -> None:
+    """Show completion message and offer to launch."""
     click.echo()
     click.secho("🎉 Setup complete!", fg="green", bold=True)
     click.echo()
@@ -549,12 +691,13 @@ def _ensure_openwakeword() -> None:
         return
 
     import subprocess
-    import sys
 
-    click.echo("  ⬇️  Installing openwakeword...")
+    spinner = Spinner("Installing openwakeword...").start()
     result = subprocess.run(
         [sys.executable, "-m", "pip", "install", "openwakeword"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
+    spinner.stop()
     if result.returncode == 0:
         click.secho("  ✅ openwakeword installed!", fg="green")
     else:
@@ -695,13 +838,14 @@ def _ensure_torch(primary_lang: str) -> None:
         return
 
     import subprocess
-    import sys
 
-    click.echo("  ⬇️  Installing PyTorch (CPU)...")
+    spinner = Spinner("Installing PyTorch (CPU)... this may take a few minutes").start()
     result = subprocess.run(
         [sys.executable, "-m", "pip", "install", "torch",
          "--index-url", "https://download.pytorch.org/whl/cpu"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
+    spinner.stop()
     if result.returncode == 0:
         click.secho("  ✅ PyTorch installed!", fg="green")
     else:
@@ -748,28 +892,32 @@ def _step_download_models(model_size: str, voice_en: str, voice_ru: str, primary
 
     click.echo()
 
+    def _download(label: str, func, *args):
+        spinner = Spinner(f"Downloading {label}...").start()
+        try:
+            func(*args)
+            spinner.stop(f"  ✅ {label}")
+        except Exception:
+            spinner.stop(f"  ⚠️  Failed to download {label}")
+            raise
+
     try:
         if not status["whisper"]:
-            click.echo(f"  ⬇️  Downloading Whisper {model_size} model...")
-            get_whisper_model(model_size)
+            _download(f"Whisper {model_size} model", get_whisper_model, model_size)
 
         if not status.get("piper_en"):
-            click.echo(f"  ⬇️  Downloading English voice ({voice_en})...")
-            get_piper_model(voice_en)
+            _download(f"English voice ({voice_en})", get_piper_model, voice_en)
 
         if not status.get("silero_ru"):
-            click.echo("  ⬇️  Downloading Russian Silero TTS model...")
-            get_silero_tts_model("ru")
+            _download("Russian Silero TTS model", get_silero_tts_model, "ru")
 
         if not status["vad"]:
-            click.echo("  ⬇️  Downloading VAD model...")
-            get_silero_vad_model()
+            _download("VAD model", get_silero_vad_model)
 
         if not status.get("wakeword", True):
             info = WAKE_WORD_MODELS.get(wakeword_model, {})
             if not info.get("builtin", False):
-                click.echo(f"  ⬇️  Downloading wake word model ({wakeword_model})...")
-                get_wake_word_model(wakeword_model)
+                _download(f"Wake word model ({wakeword_model})", get_wake_word_model, wakeword_model)
 
         click.secho("  ✅ All models ready!", fg="green")
 
