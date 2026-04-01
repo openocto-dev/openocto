@@ -142,6 +142,7 @@ class OpenOctoApp:
         # AI Router
         from openocto.ai.router import AIRouter
         self._ai_router = AIRouter(self._config.ai)
+        self._ai_checked = False  # will check on first run()
 
         # Memory system
         if self._config.memory.enabled:
@@ -171,6 +172,45 @@ class OpenOctoApp:
                 print("   Falling back to push-to-talk mode.\n")
 
         print("✅ Ready!\n")
+
+    @staticmethod
+    def _friendly_error(e: Exception) -> str:
+        """Convert exceptions to user-friendly messages."""
+        error_str = str(e).lower()
+        backend_hint = ""
+
+        # Connection errors (proxy not running, network issues)
+        if "connection" in error_str or "connect" in error_str:
+            backend_hint = (
+                "AI backend is not reachable.\n"
+                "   Possible causes:\n"
+                "   - Claude proxy is not running (start it: npx claude-max-proxy)\n"
+                "   - No internet connection\n"
+                "   - API endpoint is down\n"
+                "   Fix the issue and try again, or switch backend:\n"
+                "     openocto setup --from-step 2"
+            )
+        # Auth errors
+        elif "auth" in error_str or "api key" in error_str or "401" in error_str or "403" in error_str:
+            backend_hint = (
+                "AI backend rejected your credentials.\n"
+                "   Check your API key or subscription, then re-run:\n"
+                "     openocto setup --from-step 2"
+            )
+        # Rate limits
+        elif "rate" in error_str or "429" in error_str or "quota" in error_str:
+            backend_hint = (
+                "AI backend rate limit reached. Wait a moment and try again."
+            )
+        # Timeout
+        elif "timeout" in error_str or "timed out" in error_str:
+            backend_hint = (
+                "AI backend timed out. Check your connection and try again."
+            )
+
+        if backend_hint:
+            return backend_hint
+        return f"Error: {e}"
 
     def _detect_response_lang(self, text: str) -> str:
         """Detect language of AI response text by script."""
@@ -487,7 +527,8 @@ class OpenOctoApp:
 
         except Exception as e:
             logger.exception("Pipeline error")
-            print(f"\n❌ Error: {e}")
+            error_msg = self._friendly_error(e)
+            print(f"\n❌ {error_msg}")
             self._state_machine.reset()
         finally:
             self._processing = False
@@ -502,6 +543,16 @@ class OpenOctoApp:
         self._current_user_id = uid
         logger.info("Active user: %s (id=%d)", uname, uid)
         self._init_components()
+
+        # Health check: verify AI backend responds before starting
+        print(f"🧠 Checking AI backend ({self._ai_router.active_backend_name})...")
+        ok, msg = await self._ai_router.health_check()
+        if ok:
+            print(f"✅ {msg}\n")
+        else:
+            print(f"\n⚠️  AI backend is not responding: {msg}")
+            print("   The assistant may not be able to answer your questions.")
+            print("   Check your API key, network connection, or proxy.\n")
 
         header = (
             f"🐙 OpenOcto v{__version__} | "
@@ -527,7 +578,7 @@ class OpenOctoApp:
         finally:
             self._capture.stop_stream()
             self._player.stop()
-            print("\n👋 Goodbye!")
+            print("\n👋 Bye, see you soon! Run `openocto start` to come back.")
 
     async def _run_ptt_mode(self, header: str) -> None:
         """Push-to-talk: hold Space to record."""
@@ -550,4 +601,4 @@ class OpenOctoApp:
             listener.stop()
             self._capture.stop()
             self._player.stop()
-            print("\n👋 Goodbye!")
+            print("\n👋 Bye, see you soon! Run `openocto start` to come back.")

@@ -10,6 +10,17 @@ set -euo pipefail
 REPO_URL="https://github.com/openocto-dev/openocto.git"
 MIN_PYTHON="3.10"
 
+# --- Ensure Homebrew is in PATH (macOS) ---
+if [ "$(uname)" = "Darwin" ]; then
+    if ! command -v brew &>/dev/null; then
+        if [ -f /opt/homebrew/bin/brew ]; then
+            eval "$(/opt/homebrew/bin/brew shellenv)"
+        elif [ -f /usr/local/bin/brew ]; then
+            eval "$(/usr/local/bin/brew shellenv)"
+        fi
+    fi
+fi
+
 # --- Colors ---
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -60,9 +71,50 @@ echo ""
 echo -e "${BOLD}${CYAN}🐙 OpenOcto Installer${NC}"
 echo ""
 
-# 1. Check Python
+# 1. Check Python (offer to install via Homebrew on macOS)
 info "Checking Python..."
-PYTHON=$(find_python) || fail "Python $MIN_PYTHON+ is required. Install it from https://python.org"
+if ! PYTHON=$(find_python); then
+    if [ "$(uname)" = "Darwin" ]; then
+        # macOS: offer to install via Homebrew
+        if ! command -v brew &>/dev/null; then
+            echo ""
+            warn "Python $MIN_PYTHON+ is required but not found."
+            info "The easiest way to install it on macOS is via Homebrew."
+            echo ""
+            read -r -p "$(echo -e "${CYAN}Install Homebrew and Python? [Y/n]: ${NC}")" INSTALL_BREW </dev/tty
+            if [[ ! "$INSTALL_BREW" =~ ^[Nn]$ ]]; then
+                info "Installing Homebrew..."
+                /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+                # Add brew to PATH for this session (Apple Silicon vs Intel)
+                if [ -f /opt/homebrew/bin/brew ]; then
+                    eval "$(/opt/homebrew/bin/brew shellenv)"
+                elif [ -f /usr/local/bin/brew ]; then
+                    eval "$(/usr/local/bin/brew shellenv)"
+                fi
+                ok "Homebrew installed"
+            else
+                fail "Python $MIN_PYTHON+ is required. Install manually:\n  /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"\n  brew install python@3.13"
+            fi
+        fi
+        # Homebrew is available — install Python
+        echo ""
+        read -r -p "$(echo -e "${CYAN}Install Python 3.13 via Homebrew? [Y/n]: ${NC}")" INSTALL_PY </dev/tty
+        if [[ ! "$INSTALL_PY" =~ ^[Nn]$ ]]; then
+            info "Installing Python 3.13..."
+            brew install python@3.13
+            ok "Python installed"
+        else
+            fail "Python $MIN_PYTHON+ is required. Install it with: brew install python@3.13"
+        fi
+        PYTHON=$(find_python) || fail "Python installation failed. Try: brew install python@3.13"
+    elif command -v apt-get &>/dev/null; then
+        fail "Python $MIN_PYTHON+ is required. Install it with:\n  sudo apt update && sudo apt install -y python3 python3-venv python3-pip"
+    elif command -v dnf &>/dev/null; then
+        fail "Python $MIN_PYTHON+ is required. Install it with:\n  sudo dnf install -y python3 python3-pip"
+    else
+        fail "Python $MIN_PYTHON+ is required. Install it from https://python.org"
+    fi
+fi
 PYTHON_VER=$("$PYTHON" -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}')")
 ok "Found Python $PYTHON_VER ($PYTHON)"
 
@@ -72,7 +124,13 @@ if PROJECT_DIR=$(find_project_root 2>/dev/null); then
     cd "$PROJECT_DIR"
 else
     # Remote mode: clone the repo
-    command -v git &>/dev/null || fail "git is required. Install it first."
+    if ! command -v git &>/dev/null; then
+        if [ "$(uname)" = "Darwin" ]; then
+            fail "git is required. Install Xcode Command Line Tools:\n  xcode-select --install"
+        else
+            fail "git is required. Install it first."
+        fi
+    fi
     INSTALL_DIR="${OPENOCTO_DIR:-$HOME/openocto}"
 
     if [ -d "$INSTALL_DIR/.git" ]; then
@@ -114,10 +172,12 @@ if [ -d /usr/local/bin ] && [ -w /usr/local/bin ]; then
     ln -sf "$OCTO_BIN" /usr/local/bin/openocto
     ok "Symlink created: /usr/local/bin/openocto"
     SYMLINK_PLACED=true
-elif sudo -n true 2>/dev/null; then
-    sudo ln -sf "$OCTO_BIN" /usr/local/bin/openocto
-    ok "Symlink created: /usr/local/bin/openocto (sudo)"
-    SYMLINK_PLACED=true
+elif [ -d /usr/local/bin ]; then
+    info "Creating symlink in /usr/local/bin (requires sudo)..."
+    if sudo ln -sf "$OCTO_BIN" /usr/local/bin/openocto; then
+        ok "Symlink created: /usr/local/bin/openocto"
+        SYMLINK_PLACED=true
+    fi
 fi
 
 # Fallback: write to shell rc file
@@ -146,7 +206,7 @@ fi
 
 # 7. Install openwakeword (optional, for always-on wake word mode)
 echo ""
-read -r -p "$(echo -e "${CYAN}Install wake word detection (\"Hey Octo!\")? [y/N]: ${NC}")" INSTALL_WW
+read -r -p "$(echo -e "${CYAN}Install wake word detection (\"Hey Octo!\")? [y/N]: ${NC}")" INSTALL_WW </dev/tty
 if [[ "$INSTALL_WW" =~ ^[Yy]$ ]]; then
     info "Installing openwakeword..."
     .venv/bin/pip install --quiet "openwakeword>=0.6.0" && ok "openwakeword installed" || warn "Failed to install openwakeword (optional — wake word won't work)"
@@ -170,6 +230,11 @@ fi
 
 # 10. Run setup wizard
 echo ""
-info "Starting setup wizard..."
+ok "Installation complete!"
 echo ""
-.venv/bin/openocto setup
+info "Next step — run the setup wizard:"
+echo -e "  ${BOLD}openocto setup${NC}"
+echo ""
+info "Then start the assistant:"
+echo -e "  ${BOLD}openocto start${NC}"
+echo ""
