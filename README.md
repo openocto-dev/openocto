@@ -272,5 +272,4 @@ See [BRAND.md](BRAND.md) for usage guidelines.
 [Business Source License 1.1](LICENSE.md) — free for personal and non-commercial use. Converts to Apache 2.0 on 2030-03-30.
 
 **Website:** [openocto.dev](https://openocto.dev)
-**Author:** [Rocket Dev](https://rocketdev.tech)
 **Maintainer:** Dmitry Rman ([@Dmitry-rman](https://github.com/Dmitry-rman))

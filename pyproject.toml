@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "openocto"
+name = "openocto-dev"
 version = "0.1.0"
 description = "Open-source personal AI assistant constructor with voice control and persona system"
 license = {text = "BSL-1.1"}
@@ -49,6 +49,9 @@ wakeword = [
 
 [project.scripts]
 openocto = "openocto.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["openocto"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
