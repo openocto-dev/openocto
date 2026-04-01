@@ -279,7 +279,7 @@ def _step_tts_voices() -> tuple[str, str, str]:
     return voice_en, voice_ru, primary_lang
 
 
-def _step_audio_devices() -> tuple[int | None, int | None]:
+def _step_audio_devices() -> tuple[str | None, str | None]:
     """Step 4: Choose microphone and output device."""
     click.secho("🔊 [5/8] Audio Devices", bold=True)
     click.echo()
@@ -311,9 +311,9 @@ def _step_audio_devices() -> tuple[int | None, int | None]:
     click.echo()
 
     mic_choice = click.prompt("  Choose microphone", type=click.IntRange(0, len(inputs)), default=0)
-    input_device = None if mic_choice == 0 else inputs[mic_choice - 1][0]
+    input_device = None if mic_choice == 0 else inputs[mic_choice - 1][1]["name"]
     if input_device is not None:
-        click.secho(f"  ✅ Microphone: {inputs[mic_choice - 1][1]['name']}", fg="green")
+        click.secho(f"  ✅ Microphone: {input_device}", fg="green")
     else:
         click.secho("  ✅ Microphone: system default", fg="green")
     click.echo()
@@ -326,9 +326,9 @@ def _step_audio_devices() -> tuple[int | None, int | None]:
     click.echo()
 
     spk_choice = click.prompt("  Choose speaker", type=click.IntRange(0, len(outputs)), default=0)
-    output_device = None if spk_choice == 0 else outputs[spk_choice - 1][0]
+    output_device = None if spk_choice == 0 else outputs[spk_choice - 1][1]["name"]
     if output_device is not None:
-        click.secho(f"  ✅ Speaker: {outputs[spk_choice - 1][1]['name']}", fg="green")
+        click.secho(f"  ✅ Speaker: {output_device}", fg="green")
     else:
         click.secho("  ✅ Speaker: system default", fg="green")
     click.echo()
@@ -389,7 +389,7 @@ def _record_chunk(input_device, duration: float, sample_rate: int = 16000) -> "n
     return audio
 
 
-def _step_mic_calibration(input_device: int | None) -> tuple[float | None, float, int]:
+def _step_mic_calibration(input_device: int | str | None) -> tuple[float | None, float, int]:
     """Step 6: Calibrate mic — record silence + speech, set gain, VAD threshold, RMS threshold.
 
     Returns (mic_gain, vad_threshold, rms_speech_threshold).
