@@ -98,6 +98,17 @@ class AIConfig(BaseModel):
     max_history: int = 20
 
 
+class MemoryConfig(BaseModel):
+    enabled: bool = True
+    recent_window: int = 80           # messages in short-term window (40 turns)
+    summarize_threshold: int = 40     # messages beyond window before summarization triggers
+    max_facts: int = 50               # max user facts
+    max_notes: int = 20               # max active notes
+    notes_ttl_days: int = 14          # auto-resolve notes older than N days
+    search_half_life_days: int = 30   # temporal decay for search results
+    semantic_search: bool = True      # enable vector search (if dependencies installed)
+
+
 class WakeWordConfig(BaseModel):
     enabled: bool = False
     model: str = "hey_jarvis_v0.1"  # any OpenWakeWord built-in or custom model name
@@ -119,6 +130,7 @@ class AppConfig(BaseModel):
     stt: STTConfig = Field(default_factory=STTConfig)
     tts: TTSConfig = Field(default_factory=TTSConfig)
     ai: AIConfig = Field(default_factory=AIConfig)
+    memory: MemoryConfig = Field(default_factory=MemoryConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
 
 

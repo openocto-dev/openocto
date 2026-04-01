@@ -488,6 +488,126 @@ The state machine publishes events via the event bus, consumed by the Web UI and
 
 ---
 
+### 10. Memory System
+
+A 5-layer memory system for persistent context across conversations without growing token usage linearly.
+
+**Layers:**
+
+| Layer | What | When | Storage |
+|-------|------|------|---------|
+| 1. Short-term | Last N messages (configurable) | Every request | `messages` table |
+| 2. Conversation notes | Important items before summarization (memory flush) | Before summarization | `conversation_notes` table |
+| 3. Structured summaries | Rolling compression of old messages | Every ~20 turns | `conversation_summaries` table |
+| 4. User facts | Atomic facts about the user + communication style | With summarization | `user_facts` table |
+| 5. Semantic search | Meaning-based search across all history | Every request | FTS5 + sqlite-vec |
+
+**Architecture:**
+
+```
+User message
+     │
+     ▼
+┌─────────────────────────────────────────────────┐
+│              MemoryManager.build_context()       │
+│                                                  │
+│  1. Load user facts ──────────────┐              │
+│     [personal] Name: Dmitry       │              │
+│     [comm_style] Prefers informal │              │
+│                                   ▼              │
+│  2. Load active notes ──────── System Prompt     │
+│     - Discuss pilaf recipe next   │              │
+│     - Studying Python: dicts      │              │
+│                                   │              │
+│  3. Load structured summary ──────┤              │
+│     ### Preferences               │              │
+│     ### Active reminders          │              │
+│     ### Ongoing topics            │              │
+│                                   │              │
+│  4. Semantic search (FTS5+vec) ───┤              │
+│     [15 Mar] "борщ recipe..."     │              │
+│                                   ▼              │
+│  5. Recent N messages ────────► AI Backend       │
+│     (from config.memory.                         │
+│      recent_window)                              │
+└─────────────────────────────────────────────────┘
+     │
+     ▼  (after AI response, background)
+┌─────────────────────────────────────────────────┐
+│           MemoryManager.maybe_process()          │
+│                                                  │
+│  if unsummarized > threshold + recent_window:    │
+│    1. Extract notes (memory flush)               │
+│    2. Structured summary (persona sections)      │
+│    3. Extract facts with categories              │
+│    4. Auto-resolve old notes (TTL)               │
+│    5. Quality guard (retry if too short)          │
+└─────────────────────────────────────────────────┘
+```
+
+**Persona-configurable summary sections:**
+
+Each persona can define its own summary structure in `persona.yaml`:
+
+```yaml
+# Home assistant persona (Hestia)
+memory:
+  summary_sections:
+    - "Preferences"
+    - "Active reminders"
+    - "Family & household"
+    - "Ongoing topics"
+    - "Recent context"
+
+# Business persona (Metis)
+memory:
+  summary_sections:
+    - "Decisions & agreements"
+    - "Active tasks & deadlines"
+    - "Team & stakeholders"
+    - "Ongoing projects"
+    - "Recent context"
+```
+
+Default sections (if not specified): `["Preferences", "Active reminders", "Ongoing topics", "Recent context"]`
+
+**Configuration (`memory` section in config.yaml):**
+
+```yaml
+memory:
+  enabled: true
+  recent_window: 80           # messages in short-term window (40 turns)
+  summarize_threshold: 40     # messages beyond window before summarization triggers
+  max_facts: 50               # max user facts
+  max_notes: 20               # max active notes
+  notes_ttl_days: 14          # auto-resolve notes older than N days
+  search_half_life_days: 30   # temporal decay for search results
+  semantic_search: true       # enable vector search (if dependencies installed)
+```
+
+**Token budget (at recent_window=80):**
+
+| Component | ~Tokens |
+|-----------|---------|
+| System prompt (persona) | ~200 |
+| User facts | ~100-300 |
+| Active notes | ~100-300 |
+| Structured summary | ~300-800 |
+| Search results (top-3) | ~200-600 |
+| Recent messages | ~4000-8000 |
+| **Total** | **~5000-10000** |
+
+**Semantic search stack:**
+- **FTS5** — built into SQLite, 0 dependencies. Always available.
+- **sqlite-vec** + **fastembed** — optional (`pip install openocto[search]`). Enables hybrid search (vector 0.7 + FTS5 0.3 with reciprocal rank fusion + temporal decay).
+
+**Files:**
+- `openocto/memory.py` — MemoryManager (build_context, summarization, fact extraction)
+- `openocto/search.py` — SemanticSearch (FTS5 + optional sqlite-vec)
+- `openocto/history.py` — extended with tables: `conversation_summaries`, `conversation_notes`, `user_facts`, `messages_fts`
+
+---
+
 ## Project Structure
 
 ```
@@ -516,9 +636,12 @@ openocto/
 ├── openocto/                      # Python package
 │   ├── __init__.py
 │   ├── __main__.py                # Entry point: python -m openocto
-│   ├── config.py                  # Config loader
+│   ├── config.py                  # Config loader (incl. MemoryConfig)
 │   ├── state_machine.py           # Main state machine
 │   ├── event_bus.py               # Event publishing for UI/API
+│   ├── history.py                 # SQLite persistence (messages, facts, notes, summaries)
+│   ├── memory.py                  # MemoryManager (context builder + summarization)
+│   ├── search.py                  # SemanticSearch (FTS5 + optional sqlite-vec)
 │   ├── persona/
 │   │   ├── __init__.py
 │   │   └── manager.py             # Persona loading & switching

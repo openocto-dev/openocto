@@ -9,7 +9,6 @@ from openocto.ai.base import AIBackend
 
 if TYPE_CHECKING:
     from openocto.config import AIConfig
-    from openocto.persona.manager import Persona
 
 logger = logging.getLogger(__name__)
 
@@ -92,24 +91,24 @@ class AIRouter:
         self,
         user_text: str,
         history: list[dict],
-        persona: Persona,
+        system_prompt: str,
     ) -> str:
         """Send a user message and get a complete response.
 
         Args:
             user_text: the current user message.
             history: previous messages (caller loads from DB).
-            persona: active persona (provides system_prompt).
+            system_prompt: assembled system prompt (persona + memory context).
         """
         messages = [*history, {"role": "user", "content": user_text}]
         backend = self.get_backend()
-        return await backend.send(messages, persona.system_prompt)
+        return await backend.send(messages, system_prompt)
 
     async def send_streaming(
         self,
         user_text: str,
         history: list[dict],
-        persona: Persona,
+        system_prompt: str,
         on_chunk: Callable[[str], Awaitable[None]],
     ) -> str:
         """Send a user message and stream the response.
@@ -117,9 +116,9 @@ class AIRouter:
         Args:
             user_text: the current user message.
             history: previous messages (caller loads from DB).
-            persona: active persona (provides system_prompt).
+            system_prompt: assembled system prompt (persona + memory context).
             on_chunk: callback for each streamed token.
         """
         messages = [*history, {"role": "user", "content": user_text}]
         backend = self.get_backend()
-        return await backend.send_streaming(messages, persona.system_prompt, on_chunk)
+        return await backend.send_streaming(messages, system_prompt, on_chunk)

@@ -6,17 +6,6 @@ import pytest
 
 from openocto.ai.router import AIRouter
 from openocto.config import AIConfig, ClaudeConfig
-from openocto.persona.manager import Persona
-
-
-@pytest.fixture
-def mock_persona() -> Persona:
-    return Persona(
-        name="test",
-        display_name="Test",
-        description="",
-        system_prompt="You are a test assistant.",
-    )
 
 
 @pytest.fixture
@@ -68,13 +57,13 @@ class TestAIRouter:
             router.set_backend("unknown_backend")
 
     @pytest.mark.asyncio
-    async def test_send_passes_history_and_text(self, config_with_claude, mock_persona):
+    async def test_send_passes_history_and_text(self, config_with_claude):
         mock_backend = AsyncMock()
         mock_backend.send.return_value = "Hello, I am a test response."
         router, _ = make_router(config_with_claude, mock_backend)
 
         history = [{"role": "user", "content": "prev"}, {"role": "assistant", "content": "prev-resp"}]
-        response = await router.send("Hello", history, mock_persona)
+        response = await router.send("Hello", history, "You are a test assistant.")
 
         assert response == "Hello, I am a test response."
         # Backend should receive history + current message
@@ -83,30 +72,30 @@ class TestAIRouter:
         assert sent_messages[-1] == {"role": "user", "content": "Hello"}
 
     @pytest.mark.asyncio
-    async def test_send_passes_system_prompt(self, config_with_claude, mock_persona):
+    async def test_send_passes_system_prompt(self, config_with_claude):
         mock_backend = AsyncMock()
         mock_backend.send.return_value = "response"
         router, _ = make_router(config_with_claude, mock_backend)
 
-        await router.send("test", [], mock_persona)
+        await router.send("test", [], "You are a test assistant.")
 
         call_kwargs = mock_backend.send.call_args
-        assert call_kwargs[0][1] == mock_persona.system_prompt
+        assert call_kwargs[0][1] == "You are a test assistant."
 
     @pytest.mark.asyncio
-    async def test_send_with_empty_history(self, config_with_claude, mock_persona):
+    async def test_send_with_empty_history(self, config_with_claude):
         mock_backend = AsyncMock()
         mock_backend.send.return_value = "hi"
         router, _ = make_router(config_with_claude, mock_backend)
 
-        response = await router.send("Hello", [], mock_persona)
+        response = await router.send("Hello", [], "You are a test assistant.")
         assert response == "hi"
         sent_messages = mock_backend.send.call_args[0][0]
         assert len(sent_messages) == 1
         assert sent_messages[0] == {"role": "user", "content": "Hello"}
 
     @pytest.mark.asyncio
-    async def test_send_streaming(self, config_with_claude, mock_persona):
+    async def test_send_streaming(self, config_with_claude):
         mock_backend = AsyncMock()
         mock_backend.send_streaming.return_value = "Streamed response."
         router, _ = make_router(config_with_claude, mock_backend)
@@ -115,7 +104,7 @@ class TestAIRouter:
             pass
 
         history = [{"role": "user", "content": "hi"}, {"role": "assistant", "content": "hello"}]
-        response = await router.send_streaming("Hi", history, mock_persona, on_chunk=noop)
+        response = await router.send_streaming("Hi", history, "You are a test assistant.", on_chunk=noop)
         assert response == "Streamed response."
         sent_messages = mock_backend.send_streaming.call_args[0][0]
         assert len(sent_messages) == 3

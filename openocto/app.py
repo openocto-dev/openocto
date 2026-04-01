@@ -14,6 +14,7 @@ from openocto.audio.player import AudioPlayer
 from openocto.config import AppConfig
 from openocto.event_bus import EventBus, EventType
 from openocto.history import HistoryStore
+from openocto.memory import MemoryManager
 from openocto.persona.manager import Persona, PersonaManager
 from openocto.state_machine import State, StateMachine
 
@@ -44,8 +45,10 @@ class OpenOctoApp:
         self._wakeword = None
         self._vad = None
 
-        # Persistent history
+        # Persistent history + memory
         self._history_store = HistoryStore()
+        self._memory: MemoryManager | None = None
+        self._search = None
         self._current_user_id: int | None = None
 
         # Processing lock (shared by PTT and wake word modes)
@@ -139,6 +142,20 @@ class OpenOctoApp:
         # AI Router
         from openocto.ai.router import AIRouter
         self._ai_router = AIRouter(self._config.ai)
+
+        # Memory system
+        if self._config.memory.enabled:
+            search = None
+            if self._config.memory.semantic_search:
+                try:
+                    from openocto.search import SemanticSearch
+                    search = SemanticSearch(self._history_store, self._config.memory)
+                    self._search = search
+                except ImportError:
+                    logger.debug("Semantic search dependencies not installed, using FTS5 only")
+            self._memory = MemoryManager(
+                self._history_store, self._config.memory, search=search,
+            )
 
         # Wake word + VAD (only in wake word mode)
         if self._config.wakeword.enabled:
@@ -376,16 +393,31 @@ class OpenOctoApp:
             print(f"You [{result.language}]: {result.text}")
             await self._state_machine.transition("transcription_done")
 
-            # Persist user message & load history
+            # Persist user message & build context
             persona_name = self._persona.name
             uid = self._current_user_id
-            self._history_store.add_message(
+            msg_id = self._history_store.add_message(
                 uid, persona_name, "user", result.text,
                 language=result.language,
             )
-            history = self._history_store.get_recent_messages(
-                uid, persona_name, limit=self._config.ai.max_history,
-            )
+
+            # Index message for search
+            if self._search:
+                try:
+                    self._search.index_message(msg_id, result.text)
+                except Exception:
+                    logger.debug("Search indexing failed", exc_info=True)
+
+            # Build context (memory-enriched system prompt + recent history)
+            if self._memory:
+                system_prompt, history = self._memory.build_context(
+                    uid, self._persona, result.text,
+                )
+            else:
+                system_prompt = self._persona.system_prompt
+                history = self._history_store.get_recent_messages(
+                    uid, persona_name, limit=self._config.ai.max_history,
+                )
 
             # AI response
             response_chunks: list[str] = []
@@ -410,7 +442,7 @@ class OpenOctoApp:
                 print(chunk, end="", flush=True)
 
             response = await self._ai_router.send_streaming(
-                result.text, history, self._persona, on_chunk
+                result.text, history, system_prompt, on_chunk
             )
             if not spinner.done():
                 spinner.cancel()
@@ -419,10 +451,23 @@ class OpenOctoApp:
             print()  # newline after streamed response
 
             # Persist assistant response
-            self._history_store.add_message(
+            assistant_msg_id = self._history_store.add_message(
                 uid, persona_name, "assistant", response,
                 backend=self._ai_router.active_backend_name,
             )
+
+            # Index assistant response for search
+            if self._search:
+                try:
+                    self._search.index_message(assistant_msg_id, response)
+                except Exception:
+                    logger.debug("Search indexing failed", exc_info=True)
+
+            # Background memory processing (summarization, fact extraction)
+            if self._memory:
+                asyncio.create_task(
+                    self._memory.maybe_process(uid, self._persona, self._ai_router)
+                )
 
             await self._event_bus.publish(EventType.AI_RESPONSE, {"text": response})
             await self._state_machine.transition("response_ready")

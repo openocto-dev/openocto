@@ -97,6 +97,17 @@ ai:
     #   base_url: "http://localhost:11434/v1"
     #   no_auth: true
 
+# Memory system (conversation summaries, user facts, semantic search)
+memory:
+  enabled: true
+  recent_window: 80           # messages in short-term window (40 turns)
+  summarize_threshold: 40     # messages beyond window before summarization triggers
+  max_facts: 50
+  max_notes: 20
+  notes_ttl_days: 14          # auto-resolve notes older than N days
+  search_half_life_days: 30   # temporal decay half-life for search results
+  semantic_search: true       # enable vector search (requires openocto[search])
+
 # Logging
 logging:
   level: "INFO"

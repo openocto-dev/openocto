@@ -28,6 +28,7 @@ class Persona:
     sentence_silence: float = 0.3
     personality: dict = field(default_factory=dict)
     skills: list[str] = field(default_factory=list)
+    memory_summary_sections: list[str] | None = None
 
     def get_voice_model(self, language: str) -> str:
         """Get the TTS model for the given language code."""
@@ -75,6 +76,7 @@ class PersonaManager:
         system_prompt = prompt_path.read_text(encoding="utf-8").strip() if prompt_path.exists() else ""
 
         voice = config.get("voice", {})
+        memory = config.get("memory", {})
 
         return Persona(
             name=config["name"],
@@ -87,6 +89,7 @@ class PersonaManager:
             sentence_silence=voice.get("sentence_silence", 0.3),
             personality=config.get("personality", {}),
             skills=config.get("skills", []),
+            memory_summary_sections=memory.get("summary_sections"),
         )
 
     def activate(self, name: str) -> Persona:
