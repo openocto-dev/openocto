@@ -171,6 +171,22 @@ class HistoryStore:
         ).fetchall()
         return [dict(r) for r in rows]
 
+    def delete_user(self, user_id: int) -> None:
+        """Delete a user and all their related data."""
+        self._conn.execute("DELETE FROM user_facts WHERE user_id = ?", (user_id,))
+        self._conn.execute("DELETE FROM conversation_notes WHERE user_id = ?", (user_id,))
+        self._conn.execute("DELETE FROM conversation_summaries WHERE user_id = ?", (user_id,))
+        self._conn.execute("DELETE FROM messages WHERE user_id = ?", (user_id,))
+        self._conn.execute("DELETE FROM user_identities WHERE user_id = ?", (user_id,))
+        self._conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+        self._conn.commit()
+
+    def set_default_user(self, user_id: int) -> None:
+        """Set a user as default (clears default from all others)."""
+        self._conn.execute("UPDATE users SET is_default = 0")
+        self._conn.execute("UPDATE users SET is_default = 1 WHERE id = ?", (user_id,))
+        self._conn.commit()
+
     # ── External identities ────────────────────────────────────────────
 
     def link_identity(

@@ -68,6 +68,12 @@ openocto start --ai claude-proxy      # use Claude subscription (via proxy)
 openocto start --ai openai            # use OpenAI
 openocto setup                        # re-run the setup wizard
 openocto config show                  # show resolved configuration
+openocto user list                    # list all users
+openocto user add "Anna"              # add a new user
+openocto user add "Anna" --default    # add and set as default
+openocto user delete "Anna"           # delete user and all their data
+openocto user delete "Anna" -y        # delete without confirmation
+openocto user default "Anna"          # set default user
 openocto --version
 ```
 

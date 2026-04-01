@@ -59,7 +59,6 @@ class TestUsers:
     def test_list_users_empty(self, store):
         assert store.list_users() == []
 
-
     def test_get_last_active_user(self, store):
         uid1 = store.create_user("Alice")
         uid2 = store.create_user("Bob")
