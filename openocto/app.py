@@ -52,8 +52,10 @@ class OpenOctoApp:
         self._processing = False
         self._loop: asyncio.AbstractEventLoop | None = None
 
-    def _resolve_user(self) -> tuple[int, str]:
+    async def _resolve_user(self) -> tuple[int, str]:
         """Return (user_id, user_name) based on --user flag or interactive selection."""
+        import questionary
+
         users = self._history_store.list_users()
 
         # --user NAME given explicitly
@@ -81,8 +83,6 @@ class OpenOctoApp:
         if last_active:
             users = [last_active] + [u for u in users if u["id"] != last_active["id"]]
 
-        import questionary
-
         choices = [
             questionary.Choice(
                 title=u["name"] + (" (last active)" if last_active and u["id"] == last_active["id"] else ""),
@@ -90,10 +90,10 @@ class OpenOctoApp:
             )
             for u in users
         ]
-        selected = questionary.select(
+        selected = await questionary.select(
             "👤 Multiple users — who are you?",
             choices=choices,
-        ).ask()
+        ).ask_async()
 
         if selected is None:
             raise SystemExit("Cancelled.")
@@ -152,11 +152,6 @@ class OpenOctoApp:
             except RuntimeError as e:
                 print(f"\n⚠️  {e}\n")
                 print("   Falling back to push-to-talk mode.\n")
-
-        # Pick current user
-        uid, uname = self._resolve_user()
-        self._current_user_id = uid
-        logger.info("Active user: %s (id=%d)", uname, uid)
 
         print("✅ Ready!\n")
 
@@ -458,6 +453,9 @@ class OpenOctoApp:
     async def run(self) -> None:
         """Main application loop."""
         self._loop = asyncio.get_running_loop()
+        uid, uname = await self._resolve_user()
+        self._current_user_id = uid
+        logger.info("Active user: %s (id=%d)", uname, uid)
         self._init_components()
 
         header = (
