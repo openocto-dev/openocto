@@ -99,6 +99,79 @@ def test_mic() -> None:
     click.echo("Done!")
 
 
+@main.group(name="user")
+def user_group() -> None:
+    """User management."""
+
+
+@user_group.command(name="list")
+def user_list() -> None:
+    """Show all users."""
+    from openocto.history import HistoryStore
+
+    store = HistoryStore()
+    users = store.list_users()
+    if not users:
+        click.echo("No users yet. Run `openocto setup` to create one.")
+        return
+    for u in users:
+        default_mark = " (default)" if u["is_default"] else ""
+        click.echo(f"  {u['id']}. {u['name']}{default_mark}")
+
+
+@user_group.command(name="add")
+@click.argument("name")
+@click.option("--default", "is_default", is_flag=True, help="Set as default user")
+def user_add(name: str, is_default: bool) -> None:
+    """Add a new user."""
+    from openocto.history import HistoryStore
+
+    store = HistoryStore()
+    if store.get_user_by_name(name):
+        click.secho(f"User '{name}' already exists.", fg="red")
+        raise SystemExit(1)
+    uid = store.create_user(name, is_default=is_default)
+    if is_default:
+        store.set_default_user(uid)
+    click.secho(f"Created user '{name}' (id={uid}).", fg="green")
+
+
+@user_group.command(name="delete")
+@click.argument("name")
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation")
+def user_delete(name: str, yes: bool) -> None:
+    """Delete a user and all their data."""
+    from openocto.history import HistoryStore
+
+    store = HistoryStore()
+    user = store.get_user_by_name(name)
+    if not user:
+        click.secho(f"User '{name}' not found.", fg="red")
+        raise SystemExit(1)
+    if not yes:
+        click.confirm(
+            f"Delete user '{user['name']}' (id={user['id']}) and all their data?",
+            abort=True,
+        )
+    store.delete_user(user["id"])
+    click.secho(f"Deleted user '{user['name']}'.", fg="green")
+
+
+@user_group.command(name="default")
+@click.argument("name")
+def user_default(name: str) -> None:
+    """Set a user as the default."""
+    from openocto.history import HistoryStore
+
+    store = HistoryStore()
+    user = store.get_user_by_name(name)
+    if not user:
+        click.secho(f"User '{name}' not found.", fg="red")
+        raise SystemExit(1)
+    store.set_default_user(user["id"])
+    click.secho(f"'{user['name']}' is now the default user.", fg="green")
+
+
 @main.group(name="config")
 def config_group() -> None:
     """Configuration management."""

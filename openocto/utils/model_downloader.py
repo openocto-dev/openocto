@@ -175,7 +175,6 @@ def get_whisper_model(model_size: str) -> Path:
     dest = MODELS_DIR / "whisper" / info["filename"]
 
     if not dest.exists():
-        print(f"⬇️  Downloading Whisper {model_size} model (~{_model_size_hint(model_size)})...")
         _download_file(info["url"], dest, desc=f"whisper-{model_size}")
 
     return dest
@@ -192,7 +191,6 @@ def get_piper_model(model_name: str) -> tuple[Path, Path]:
     config_path = model_dir / f"{model_name}.onnx.json"
 
     if not model_path.exists():
-        print(f"⬇️  Downloading Piper voice model: {model_name}...")
         _download_file(info["model_url"], model_path, desc=f"{model_name}.onnx")
 
     if not config_path.exists():
@@ -210,7 +208,6 @@ def get_silero_tts_model(lang: str = "ru") -> Path:
     dest = MODELS_DIR / "silero_tts" / info["filename"]
 
     if not dest.exists():
-        print(f"⬇️  Downloading Silero TTS model for '{lang}' (~50 MB)...")
         _download_file(info["url"], dest, desc=info["filename"])
 
     return dest
@@ -247,7 +244,6 @@ def get_wake_word_model(model_name: str) -> Path | None:
 
     dest = MODELS_DIR / "wakeword" / info["filename"]
     if not dest.exists():
-        print(f"⬇️  Downloading wake word model: {model_name}...")
         try:
             _download_file(info["url"], dest, desc=info["filename"])
         except Exception as e:
@@ -261,7 +257,6 @@ def get_silero_vad_model() -> Path:
     dest = MODELS_DIR / "vad" / SILERO_VAD["filename"]
 
     if not dest.exists():
-        print("⬇️  Downloading Silero VAD model (~2MB)...")
         _download_file(SILERO_VAD["url"], dest, desc="silero_vad.onnx")
 
     return dest

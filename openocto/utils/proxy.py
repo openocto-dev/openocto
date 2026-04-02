@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import atexit
 import logging
+import os
 import shutil
 import subprocess
 import time
@@ -14,6 +15,23 @@ logger = logging.getLogger(__name__)
 
 PROXY_URL = "http://localhost:3456/v1"
 STARTUP_TIMEOUT = 15  # seconds
+
+# Common directories where node/npm binaries live (Homebrew, nvm, volta, etc.)
+_EXTRA_PATH_DIRS = [
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
+    os.path.expanduser("~/.volta/bin"),
+]
+
+
+def _enriched_env() -> dict[str, str]:
+    """Return a copy of os.environ with common Node.js directories on PATH."""
+    env = os.environ.copy()
+    current = env.get("PATH", "")
+    dirs_to_add = [d for d in _EXTRA_PATH_DIRS if d not in current and os.path.isdir(d)]
+    if dirs_to_add:
+        env["PATH"] = ":".join(dirs_to_add) + ":" + current
+    return env
 
 
 def is_proxy_running() -> bool:
@@ -27,15 +45,19 @@ def is_proxy_running() -> bool:
 
 def start_proxy() -> subprocess.Popen | None:
     """Start claude-max-proxy in the background. Returns the process, or None on failure."""
-    if not shutil.which("claude-max-api"):
+    env = _enriched_env()
+    if not shutil.which("claude-max-api", path=env.get("PATH")):
         logger.warning("claude-max-api not found — install with: npm install -g claude-max-api-proxy")
         return None
 
     logger.info("Starting claude-max-api-proxy...")
+    log_path = os.path.join(os.path.expanduser("~"), ".openocto", "proxy.log")
+    log_file = open(log_path, "w")  # noqa: SIM115
     proc = subprocess.Popen(
         ["claude-max-api"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stdout=log_file,
+        stderr=log_file,
+        env=env,
     )
 
     # Wait for the proxy to become responsive

@@ -110,3 +110,5 @@ class OpenWakeWordDetector(WakeWordDetector):
 
     def reset(self) -> None:
         self._last_detection = 0.0
+        if hasattr(self._oww, "reset"):
+            self._oww.reset()

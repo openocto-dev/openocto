@@ -53,6 +53,7 @@ class OpenOctoApp:
 
         # Processing lock (shared by PTT and wake word modes)
         self._processing = False
+        self._last_error = False
         self._loop: asyncio.AbstractEventLoop | None = None
 
     async def _resolve_user(self) -> tuple[int, str]:
@@ -142,6 +143,7 @@ class OpenOctoApp:
         # AI Router
         from openocto.ai.router import AIRouter
         self._ai_router = AIRouter(self._config.ai)
+        self._ai_checked = False  # will check on first run()
 
         # Memory system
         if self._config.memory.enabled:
@@ -172,6 +174,45 @@ class OpenOctoApp:
 
         print("✅ Ready!\n")
 
+    @staticmethod
+    def _friendly_error(e: Exception) -> str:
+        """Convert exceptions to user-friendly messages."""
+        error_str = str(e).lower()
+        backend_hint = ""
+
+        # Connection errors (proxy not running, network issues)
+        if "connection" in error_str or "connect" in error_str:
+            backend_hint = (
+                "AI backend is not reachable.\n"
+                "   Possible causes:\n"
+                "   - Claude proxy is not running (start it: npx claude-max-proxy)\n"
+                "   - No internet connection\n"
+                "   - API endpoint is down\n"
+                "   Fix the issue and try again, or switch backend:\n"
+                "     openocto setup --from-step 2"
+            )
+        # Auth errors
+        elif "auth" in error_str or "api key" in error_str or "401" in error_str or "403" in error_str:
+            backend_hint = (
+                "AI backend rejected your credentials.\n"
+                "   Check your API key or subscription, then re-run:\n"
+                "     openocto setup --from-step 2"
+            )
+        # Rate limits
+        elif "rate" in error_str or "429" in error_str or "quota" in error_str:
+            backend_hint = (
+                "AI backend rate limit reached. Wait a moment and try again."
+            )
+        # Timeout
+        elif "timeout" in error_str or "timed out" in error_str:
+            backend_hint = (
+                "AI backend timed out. Check your connection and try again."
+            )
+
+        if backend_hint:
+            return backend_hint
+        return f"Error: {e}"
+
     def _detect_response_lang(self, text: str) -> str:
         """Detect language of AI response text by script."""
         if not text:
@@ -192,7 +233,7 @@ class OpenOctoApp:
 
     def _on_audio_chunk(self, chunk) -> None:
         """Called from audio thread for every chunk. Feeds wake word detector."""
-        if self._wakeword and not self._processing and self._loop:
+        if self._wakeword and not self._processing and not self._last_error and self._loop:
             if self._wakeword.process_chunk(chunk):
                 asyncio.run_coroutine_threadsafe(
                     self._on_wake_word_detected(), self._loop
@@ -291,10 +332,19 @@ class OpenOctoApp:
 
         return audio
 
+    def _clear_last_error(self) -> None:
+        """Reset error flag so wake word detection resumes."""
+        if self._wakeword:
+            self._wakeword.reset()
+        self._last_error = False
+
     async def _on_wake_word_detected(self) -> None:
         """Triggered when wake word fires — beep, wait for speech, record."""
-        if self._state_machine.state != State.IDLE or self._processing:
+        if self._state_machine.state != State.IDLE or self._processing or self._last_error:
             return
+
+        self._processing = True
+
         if self._player.is_playing:
             self._player.stop()
 
@@ -307,10 +357,13 @@ class OpenOctoApp:
                 return  # no speech detected — back to idle, wake word resumes
             await self._handle_audio(audio)
         except Exception as e:
-            logger.exception("Wake word pipeline error")
-            print(f"\n❌ Error: {e}")
+            logger.debug("Wake word pipeline error", exc_info=True)
+            error_msg = self._friendly_error(e)
+            print(f"\n❌ {error_msg}")
             self._capture.stop_recording()
             self._state_machine.reset()
+        finally:
+            self._processing = False
 
     async def _auto_listen(self) -> None:
         """After TTS finishes: beep + 5s window to speak without wake word.
@@ -333,7 +386,7 @@ class OpenOctoApp:
                 return  # no speech detected — wake word mode resumes
             await self._handle_audio(audio, silent=True)
         except Exception as e:
-            logger.exception("Auto-listen error")
+            logger.debug("Auto-listen error", exc_info=True)
             print(f"\n❌ Error: {e}")
             self._capture.stop_recording()
             self._state_machine.reset()
@@ -378,6 +431,7 @@ class OpenOctoApp:
             silent: if True, silently cancel on empty transcription (auto-listen).
         """
         self._processing = True
+        spinner = None
         try:
             # Transcribe
             await self._state_machine.transition("stop_recording")
@@ -486,9 +540,18 @@ class OpenOctoApp:
             await self._event_bus.publish(EventType.TTS_FINISHED, {})
 
         except Exception as e:
-            logger.exception("Pipeline error")
-            print(f"\n❌ Error: {e}")
+            if spinner and not spinner.done():
+                spinner.cancel()
+                print("\r", end="", flush=True)  # clear spinner line
+            logger.debug("Pipeline error", exc_info=True)
+            error_msg = self._friendly_error(e)
+            print(f"\n❌ {error_msg}")
+            print("   Say 'Hi Octo' to try again.\n")
             self._state_machine.reset()
+            self._last_error = True
+            # Clear error flag after cooldown so wake word detection resumes
+            asyncio.get_event_loop().call_later(5.0, self._clear_last_error)
+            return  # don't auto-listen after error — wait for wake word
         finally:
             self._processing = False
 
@@ -502,6 +565,16 @@ class OpenOctoApp:
         self._current_user_id = uid
         logger.info("Active user: %s (id=%d)", uname, uid)
         self._init_components()
+
+        # Health check: verify AI backend responds before starting
+        print(f"🧠 Checking AI backend ({self._ai_router.active_backend_name})...")
+        ok, msg = await self._ai_router.health_check()
+        if ok:
+            print(f"✅ {msg}\n")
+        else:
+            print(f"\n⚠️  AI backend is not responding: {msg}")
+            print("   The assistant may not be able to answer your questions.")
+            print("   Check your API key, network connection, or proxy.\n")
 
         header = (
             f"🐙 OpenOcto v{__version__} | "
@@ -527,7 +600,7 @@ class OpenOctoApp:
         finally:
             self._capture.stop_stream()
             self._player.stop()
-            print("\n👋 Goodbye!")
+            print("\n👋 Bye, see you soon! Run `openocto start` to come back.")
 
     async def _run_ptt_mode(self, header: str) -> None:
         """Push-to-talk: hold Space to record."""
@@ -550,4 +623,4 @@ class OpenOctoApp:
             listener.stop()
             self._capture.stop()
             self._player.stop()
-            print("\n👋 Goodbye!")
+            print("\n👋 Bye, see you soon! Run `openocto start` to come back.")

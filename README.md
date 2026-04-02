@@ -20,17 +20,17 @@ One command to install, configure, and download models:
 
 **macOS / Linux:**
 ```bash
-curl -sSL https://raw.githubusercontent.com/openocto-dev/openocto/main/scripts/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/openocto-dev/openocto/main/install.sh | bash
 ```
 
 **Windows (PowerShell):**
 ```powershell
-irm https://raw.githubusercontent.com/openocto-dev/openocto/main/scripts/install.ps1 | iex
+irm https://raw.githubusercontent.com/openocto-dev/openocto/main/install.ps1 | iex
 ```
 
 **Already cloned the repo?** Same script works locally:
 ```bash
-./scripts/install.sh           # macOS / Linux
+./install.sh           # macOS / Linux
 .\scripts\install.ps1          # Windows
 ```
 
@@ -68,6 +68,12 @@ openocto start --ai claude-proxy      # use Claude subscription (via proxy)
 openocto start --ai openai            # use OpenAI
 openocto setup                        # re-run the setup wizard
 openocto config show                  # show resolved configuration
+openocto user list                    # list all users
+openocto user add "Anna"              # add a new user
+openocto user add "Anna" --default    # add and set as default
+openocto user delete "Anna"           # delete user and all their data
+openocto user delete "Anna" -y        # delete without confirmation
+openocto user default "Anna"          # set default user
 openocto --version
 ```
 
@@ -93,9 +99,30 @@ Each user has their own conversation history per persona.
 
 ## Requirements
 
-- Python 3.10+
+- **Python 3.10+**
 - macOS (Apple Silicon or Intel), Linux, or Windows
 - Microphone and speakers
+
+### macOS (fresh install)
+
+A clean macOS doesn't include Python or Git. Install them before running the installer:
+
+```bash
+# 1. Install Xcode Command Line Tools (includes Git)
+xcode-select --install
+
+# 2. Install Homebrew (package manager)
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+# 3. Install Python
+brew install python@3.13
+```
+
+### Linux (Debian/Ubuntu)
+
+```bash
+sudo apt update && sudo apt install -y python3 python3-venv python3-pip git
+```
 
 ## Configuration
 
@@ -278,9 +305,8 @@ openocto/
 │   └── utils/              # Model downloader, keyboard listener
 ├── personas/octo/          # Default persona
 ├── config/default.yaml     # Default configuration
-├── scripts/
-│   ├── install.sh          # macOS/Linux installer
-│   └── install.ps1         # Windows installer
+├── install.sh              # macOS/Linux installer
+├── install.ps1             # Windows installer
 ├── tests/                  # Unit tests
 └── pyproject.toml
 ```
