@@ -499,6 +499,13 @@ def _record_chunk(input_device, duration: float, sample_rate: int = 16000) -> "n
     import numpy as np
     import sounddevice as sd
 
+    # On Windows, None/"System default" can fail — resolve to default device index
+    if input_device is None or input_device == "System default":
+        try:
+            input_device = sd.default.device[0]  # default input device index
+        except Exception:
+            input_device = None
+
     # Use device native sample rate to avoid PortAudio errors
     try:
         info = sd.query_devices(input_device, "input")
