@@ -71,6 +71,10 @@ class AudioCapture:
             if status:
                 logger.warning("Audio capture status: %s", status)
             mono = indata[:, 0] if indata.ndim > 1 else indata.flatten()
+            # Apply mic gain before passing to VAD and recording buffer
+            mono_f32 = mono.astype(np.float32) / 32768.0
+            mono_f32 = self._apply_gain(mono_f32)
+            mono = np.clip(mono_f32 * 32768.0, -32768, 32767).astype(np.int16)
             if self._chunk_callback:
                 self._chunk_callback(mono.copy())
             if self._recording:
