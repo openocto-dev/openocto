@@ -5,13 +5,13 @@
 #   Local:   .\install.ps1   (from the project root)
 
 # --- Self-download when piped (irm | iex) ---
-# When run via pipe, Read-Host and interactive prompts may break.
-# Re-execute from a temp file instead.
+# When run via pipe, encoding and interactive prompts may break.
+# Download to a temp file and dot-source it in the same session.
 if (-not $env:OPENOCTO_INSTALLER_RUNNING) {
     $env:OPENOCTO_INSTALLER_RUNNING = "1"
     $tmpScript = Join-Path $env:TEMP "openocto-install.ps1"
     Invoke-WebRequest -Uri "https://raw.githubusercontent.com/openocto-dev/openocto/main/install.ps1" -OutFile $tmpScript -UseBasicParsing
-    & powershell -ExecutionPolicy Bypass -File $tmpScript
+    . $tmpScript
     Remove-Item $tmpScript -ErrorAction SilentlyContinue
     $env:OPENOCTO_INSTALLER_RUNNING = $null
     return
