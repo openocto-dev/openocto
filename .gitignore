@@ -37,6 +37,7 @@ htmlcov/
 
 ### Project
 models/
+wheels/
 *.onnx
 *.bin
 *.ggml

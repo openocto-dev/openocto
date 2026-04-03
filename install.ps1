@@ -159,21 +159,58 @@ if ($LASTEXITCODE -ne 0) {
 Write-Ok "Installed"
 
 # 4b. Try to install audio extras (pywhispercpp, piper-tts)
-# On ARM64 Windows there are no prebuilt wheels, so compilation is needed
-# and will likely fail without Visual Studio Build Tools + CMake.
+# On ARM64 Windows we download prebuilt wheels from GitHub Releases.
 $arch = $env:PROCESSOR_ARCHITECTURE
-$hasWheels = & .venv\Scripts\python.exe -c "import pip._internal.commands.download; print('ok')" 2>$null
 $skipAudio = $false
 
-if ($arch -eq "ARM64") {
-    # No prebuilt wheels for pywhispercpp/piper-tts on Windows ARM64.
-    # Compilation requires Visual Studio Build Tools + CMake which most users won't have.
-    Write-Warn "ARM64 detected: skipping audio packages (pywhispercpp, piper-tts)."
-    Write-Warn "To install manually when build tools are available: pip install -e .[audio]"
-    $skipAudio = $true
+$WheelsTag = "wheels-arm64-v1"
+$WheelsBase = "https://github.com/openocto-dev/openocto/releases/download/$WheelsTag"
+
+$Arm64Wheels = @(
+    "piper_phonemize-1.2.0-cp313-cp313-win_arm64.whl",
+    "piper_tts-1.4.2-cp313-cp313-win_arm64.whl",
+    "pywhispercpp-1.4.1-cp313-cp313-win_arm64.whl"
+)
+
+function Install-Arm64AudioWheels {
+    $tmpDir = Join-Path ([System.IO.Path]::GetTempPath()) "openocto_wheels"
+    New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null
+    Write-Info "Downloading prebuilt ARM64 audio wheels..."
+    foreach ($whl in $Arm64Wheels) {
+        $dest = Join-Path $tmpDir $whl
+        if (-not (Test-Path $dest)) {
+            try {
+                Write-Host "  -> $whl"
+                Invoke-WebRequest -Uri "$WheelsBase/$whl" -OutFile $dest -UseBasicParsing
+            } catch {
+                Write-Warn "Failed to download ${whl}: $_"
+                return $false
+            }
+        }
+    }
+    $wheelPaths = $Arm64Wheels | ForEach-Object { Join-Path $tmpDir $_ }
+    Write-Info "Installing audio wheels..."
+    & .venv\Scripts\pip install --quiet --no-deps @wheelPaths
+    if ($LASTEXITCODE -ne 0) { return $false }
+    # Runtime deps (pure-Python, available for ARM64 on PyPI)
+    & .venv\Scripts\pip install --quiet "onnxruntime>=1,<2" "pathvalidate>=3,<4"
+    if ($LASTEXITCODE -ne 0) { return $false }
+    return $true
 }
 
-if (-not $skipAudio) {
+if ($arch -eq "ARM64") {
+    Write-Info "Detected ARM64 - installing prebuilt audio wheels..."
+    $ok = Install-Arm64AudioWheels
+    if (-not $ok) {
+        Write-Warn "Prebuilt ARM64 audio wheels failed to download or install."
+        Write-Warn "OpenOcto will work without local STT/TTS."
+        $skipAudio = $true
+    } else {
+        Write-Ok "Audio components installed (ARM64 prebuilt)"
+    }
+}
+
+if (-not $skipAudio -and $arch -ne "ARM64") {
     Write-Info "Installing audio components (STT/TTS)..."
     & .venv\Scripts\pip install -e ".[audio]"
     if ($LASTEXITCODE -ne 0) {
