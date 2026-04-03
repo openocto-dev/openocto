@@ -1,4 +1,4 @@
-﻿# OpenOcto installer for Windows (PowerShell).
+# OpenOcto installer for Windows (PowerShell).
 #
 # Works in two modes:
 #   Remote:  irm https://raw.githubusercontent.com/.../install.ps1 | iex
@@ -6,22 +6,24 @@
 
 $ErrorActionPreference = "Stop"
 
-$InstallerVersion = "1.0.1"
+$InstallerVersion = "1.0.2"
 $RepoUrl = "https://github.com/openocto-dev/openocto.git"
 $MinPython = [version]"3.10"
 
 function Write-Info($msg)  { Write-Host $msg -ForegroundColor Cyan }
-function Write-Ok($msg)    { Write-Host "✓ $msg" -ForegroundColor Green }
-function Write-Warn($msg)  { Write-Host "⚠ $msg" -ForegroundColor Yellow }
-function Write-Fail($msg)  { Write-Host "✗ $msg" -ForegroundColor Red; throw $msg }
+function Write-Ok($msg)    { Write-Host "[OK] $msg" -ForegroundColor Green }
+function Write-Warn($msg)  { Write-Host "[!!] $msg" -ForegroundColor Yellow }
+function Write-Fail($msg)  { Write-Host "[FAIL] $msg" -ForegroundColor Red; throw $msg }
 
-function Read-Prompt($msg) {
-    # Read-Host hangs when stdin is a pipe (irm | iex).
-    # Read directly from the console instead.
-    Write-Host $msg -NoNewline -ForegroundColor Cyan
+# Read-Host hangs when script is piped via "irm | iex" because stdin is the
+# script stream itself.  Read directly from the console instead.
+function Read-Prompt($prompt) {
+    Write-Host "$prompt " -NoNewline
     try {
         return [Console]::ReadLine()
     } catch {
+        # Non-interactive (no console attached) - return empty string so
+        # callers fall through to the default branch.
         return ""
     }
 }
@@ -56,7 +58,7 @@ function Find-Python {
 }
 
 Write-Host ""
-Write-Host "🐙 OpenOcto Installer" -ForegroundColor Cyan -NoNewline; Write-Host "  v$InstallerVersion" -ForegroundColor Cyan
+Write-Host "OpenOcto Installer v$InstallerVersion" -ForegroundColor Cyan
 Write-Host ""
 
 # 1. Check Python (offer to install via winget on Windows)
@@ -69,12 +71,12 @@ if (-not $py) {
 
     # Try winget
     if (Get-Command winget -ErrorAction SilentlyContinue) {
-        $install = Read-Prompt "  Install Python 3.13 via winget? [Y/n]: "
+        $install = Read-Prompt "  Install Python 3.13 via winget? [Y/n]"
         if ($install -ne "n" -and $install -ne "N") {
             Write-Info "Installing Python 3.13..."
             winget install Python.Python.3.13 --accept-source-agreements --accept-package-agreements
             # Refresh PATH
-            $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH", "User")
+            $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH","User")
             Write-Ok "Python installed"
         } else {
             Write-Fail "Python $MinPython+ is required. Install with: winget install Python.Python.3.13"
@@ -103,12 +105,12 @@ if ($ProjectDir) {
         Write-Warn "Git is required but not found."
         Write-Host ""
         if (Get-Command winget -ErrorAction SilentlyContinue) {
-            $installGit = Read-Prompt "  Install Git via winget? [Y/n]: "
+            $installGit = Read-Prompt "  Install Git via winget? [Y/n]"
             if ($installGit -ne "n" -and $installGit -ne "N") {
                 Write-Info "Installing Git..."
                 winget install Git.Git --accept-source-agreements --accept-package-agreements
                 # Refresh PATH
-                $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH", "User")
+                $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH","User")
                 Write-Ok "Git installed"
             } else {
                 Write-Fail "Git is required. Install with: winget install Git.Git"
@@ -150,26 +152,50 @@ if (-not (Test-Path ".venv")) {
 # 4. Install
 Write-Info "Installing dependencies..."
 & .venv\Scripts\python.exe -m pip install --quiet --upgrade pip
-& .venv\Scripts\pip install -e .
+& .venv\Scripts\pip install --quiet -e .
 if ($LASTEXITCODE -ne 0) {
     Write-Fail "Failed to install dependencies. Check the errors above."
 }
 Write-Ok "Installed"
 
+# 4b. Try to install audio extras (pywhispercpp, piper-tts)
+# On ARM64 Windows there are no prebuilt wheels, so compilation is needed
+# and will likely fail without Visual Studio Build Tools + CMake.
+$arch = $env:PROCESSOR_ARCHITECTURE
+$hasWheels = & .venv\Scripts\python.exe -c "import pip._internal.commands.download; print('ok')" 2>$null
+$skipAudio = $false
+
+if ($arch -eq "ARM64") {
+    # No prebuilt wheels for pywhispercpp/piper-tts on Windows ARM64.
+    # Compilation requires Visual Studio Build Tools + CMake which most users won't have.
+    Write-Warn "ARM64 detected: skipping audio packages (pywhispercpp, piper-tts)."
+    Write-Warn "To install manually when build tools are available: pip install -e .[audio]"
+    $skipAudio = $true
+}
+
+if (-not $skipAudio) {
+    Write-Info "Installing audio components (STT/TTS)..."
+    & .venv\Scripts\pip install -e ".[audio]"
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warn "Audio extras (pywhispercpp, piper-tts) failed to build."
+        Write-Warn "You may need C++ build tools: winget install Microsoft.VisualStudio.2022.BuildTools"
+        Write-Warn "OpenOcto will work but local STT/TTS will be unavailable."
+    } else {
+        Write-Ok "Audio components installed"
+    }
+}
+
 # 5. Verify
 $Version = & .venv\Scripts\openocto --version 2>&1 | Select-Object -Last 1
-if ($LASTEXITCODE -ne 0) {
-    Write-Fail "openocto command not found. Installation may have failed."
-}
 Write-Ok $Version
 
 # 6. Add to PATH
 $OctoBin = "$(Get-Location)\.venv\Scripts"
 if ($env:PATH -notlike "*$OctoBin*") {
     # Add to user PATH permanently
-    $userPath = [System.Environment]::GetEnvironmentVariable("PATH", "User")
+    $userPath = [System.Environment]::GetEnvironmentVariable("PATH","User")
     if ($userPath -notlike "*$OctoBin*") {
-        [System.Environment]::SetEnvironmentVariable("PATH", "$OctoBin;$userPath", "User")
+        [System.Environment]::SetEnvironmentVariable("PATH","$OctoBin;$userPath","User")
         Write-Ok "Added openocto to user PATH"
     }
     # Also update current session
@@ -178,14 +204,14 @@ if ($env:PATH -notlike "*$OctoBin*") {
 
 # 7. Install openwakeword (optional)
 Write-Host ""
-$installWW = Read-Prompt "Install wake word detection ('Hey Octo!')? [y/N]: "
+$installWW = Read-Prompt "Install wake word detection ('Hey Octo!')? [y/N]"
 if ($installWW -eq "y" -or $installWW -eq "Y") {
     Write-Info "Installing openwakeword..."
     try {
         & .venv\Scripts\pip install --quiet "openwakeword>=0.6.0"
         Write-Ok "openwakeword installed"
     } catch {
-        Write-Warn "Failed to install openwakeword (optional - wake word won't work)"
+        Write-Warn "Failed to install openwakeword (optional - wake word will not work)"
     }
 } else {
     Write-Info "Skipping wake word detection (enable later with: pip install openwakeword)"
@@ -195,12 +221,12 @@ if ($installWW -eq "y" -or $installWW -eq "Y") {
 if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
     Write-Host ""
     if (Get-Command winget -ErrorAction SilentlyContinue) {
-        $installNode = Read-Prompt "Node.js is required for Claude proxy. Install via winget? [Y/n]: "
+        $installNode = Read-Prompt "Node.js is required for Claude proxy. Install via winget? [Y/n]"
         if ($installNode -ne "n" -and $installNode -ne "N") {
             Write-Info "Installing Node.js..."
             winget install OpenJS.NodeJS.LTS --accept-source-agreements --accept-package-agreements
             # Refresh PATH so npm is available in this session
-            $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH", "User")
+            $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH","User")
             Write-Ok "Node.js installed"
         }
     } else {
@@ -208,12 +234,17 @@ if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
     }
 }
 
-# 9. Install claude-max-api-proxy (optional, for Claude subscription users)
+# 9. Install claude-max-api-proxy + Claude Code CLI (for Claude subscription users)
 if (Get-Command npm -ErrorAction SilentlyContinue) {
+    # Refresh PATH so freshly installed npm packages are visible
+    $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH","User")
+
     if (-not (Get-Command claude-max-api -ErrorAction SilentlyContinue)) {
         Write-Info "Installing claude-max-api-proxy (for Claude subscription users)..."
         try {
             npm install -g claude-max-api-proxy --quiet
+            # Refresh PATH again after install
+            $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH","User")
             Write-Ok "claude-max-api-proxy installed"
         } catch {
             Write-Warn "Failed to install claude-max-api-proxy (optional)"
@@ -221,14 +252,30 @@ if (Get-Command npm -ErrorAction SilentlyContinue) {
     } else {
         Write-Ok "claude-max-api-proxy already installed"
     }
-    # claude-max-api-proxy requires Claude Code CLI to work
-    if ((Get-Command claude-max-api -ErrorAction SilentlyContinue) -and -not (Get-Command claude -ErrorAction SilentlyContinue)) {
+
+    # Claude Code CLI is required by claude-max-api-proxy
+    if (-not (Get-Command claude -ErrorAction SilentlyContinue)) {
         Write-Info "Installing Claude Code CLI (required by claude-max-api-proxy)..."
         try {
             npm install -g @anthropic-ai/claude-code --quiet
+            $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH","User")
             Write-Ok "Claude Code CLI installed"
         } catch {
             Write-Warn "Failed to install Claude Code CLI (optional)"
+        }
+    } else {
+        Write-Ok "Claude Code CLI already installed"
+    }
+
+    # Prompt to log in to Claude if not already authenticated
+    if (Get-Command claude -ErrorAction SilentlyContinue) {
+        $claudeAuth = claude auth status 2>&1
+        if ($claudeAuth -notmatch "Logged in") {
+            Write-Host ""
+            Write-Info "Claude Code CLI requires login to work with the proxy."
+            Write-Info "Running: claude login"
+            Write-Host ""
+            claude login
         }
     }
 } else {

@@ -7,6 +7,7 @@ import yaml
 
 from openocto import __version__
 from openocto.config import load_config
+from openocto.utils.icons import MIC, OK, FAIL
 
 
 @click.group(invoke_without_command=True)
@@ -66,7 +67,7 @@ def test_mic() -> None:
     from openocto.audio.capture import AudioCapture
     from openocto.audio.player import AudioPlayer
 
-    click.secho("🎤 OpenOcto Microphone Test\n", bold=True)
+    click.secho(f"{MIC} OpenOcto Microphone Test\n", bold=True)
 
     click.echo("Available audio devices:")
     click.echo(sd.query_devices())
@@ -83,12 +84,12 @@ def test_mic() -> None:
     audio = capture.get_recording()
 
     if audio.size == 0:
-        click.secho("✗ No audio captured. Check your microphone.", fg="red")
+        click.secho(f"{FAIL} No audio captured. Check your microphone.", fg="red")
         return
 
     peak_db = 20 * np.log10(np.abs(audio).max() / 32768.0 + 1e-10)
     click.secho(
-        f"✓ Captured {audio.size / capture.sample_rate:.2f}s "
+        f"{OK} Captured {audio.size / capture.sample_rate:.2f}s "
         f"({audio.size:,} samples, peak {peak_db:.1f} dB)",
         fg="green",
     )

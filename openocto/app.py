@@ -17,6 +17,9 @@ from openocto.history import HistoryStore
 from openocto.memory import MemoryManager
 from openocto.persona.manager import Persona, PersonaManager
 from openocto.state_machine import State, StateMachine
+from openocto.utils.icons import (
+    CHECK, CROSS, WARN, MIC, WRENCH, PLUG, USER, OCTOPUS,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +70,7 @@ class OpenOctoApp:
             user = self._history_store.get_user_by_name(self._requested_user_name)
             if user is None:
                 raise SystemExit(
-                    f"❌ User '{self._requested_user_name}' not found. "
+                    f"{CROSS} User '{self._requested_user_name}' not found. "
                     f"Available: {', '.join(u['name'] for u in users) or 'none'}"
                 )
             return user["id"], user["name"]
@@ -95,7 +98,7 @@ class OpenOctoApp:
             for u in users
         ]
         selected = await questionary.select(
-            "👤 Multiple users — who are you?",
+            f"{USER} Multiple users — who are you?",
             choices=choices,
         ).ask_async()
 
@@ -106,11 +109,15 @@ class OpenOctoApp:
 
     def _init_components(self) -> None:
         """Initialize heavy components (downloads models if needed)."""
-        print("🔧 Initializing components...")
+        print(f"{WRENCH} Initializing components...")
 
         # STT
-        from openocto.stt.whisper_cpp import WhisperCppEngine
-        self._stt = WhisperCppEngine(self._config.stt)
+        try:
+            from openocto.stt.whisper_cpp import WhisperCppEngine
+            self._stt = WhisperCppEngine(self._config.stt)
+        except ImportError:
+            print(f"{WARN}  pywhispercpp not installed — STT unavailable.")
+            print("   Install with: pip install -e .[audio]\n")
 
         # Persona
         self._persona = self._persona_manager.activate(self._config.persona)
@@ -125,7 +132,7 @@ class OpenOctoApp:
             except RuntimeError as e:
                 engine_name = self._config.tts.engines.get(lang, self._config.tts.engine)
                 if engine_name == "silero":
-                    print(f"\n⚠️  {e}\n")
+                    print(f"\n{WARN}  {e}\n")
                 else:
                     logger.warning("Failed to load TTS for lang=%s: %s", lang, e)
             except Exception as e:
@@ -134,9 +141,9 @@ class OpenOctoApp:
         # Auto-start claude-max-proxy if needed
         if self._config.ai.default_backend == "claude-proxy":
             from openocto.utils.proxy import ensure_proxy
-            print("🔌 Starting Claude proxy...")
+            print(f"{PLUG} Starting Claude proxy...")
             if not ensure_proxy():
-                print("⚠️  Claude proxy not available. Install it with:")
+                print(f"{WARN}  Claude proxy not available. Install it with:")
                 print("     npm install -g claude-max-api-proxy")
                 print("   Falling back to other available backends.\n")
 
@@ -169,10 +176,10 @@ class OpenOctoApp:
                 from openocto.vad.silero import SileroVAD
                 self._vad = SileroVAD(self._config.vad)
             except RuntimeError as e:
-                print(f"\n⚠️  {e}\n")
+                print(f"\n{WARN}  {e}\n")
                 print("   Falling back to push-to-talk mode.\n")
 
-        print("✅ Ready!\n")
+        print(f"{CHECK} Ready!\n")
 
     @staticmethod
     def _friendly_error(e: Exception) -> str:
@@ -242,23 +249,22 @@ class OpenOctoApp:
     async def _await_and_record(self, max_duration: float = 60.0,
                                 silence_after_speech: float = 3.0,
                                 no_speech_timeout: float = 10.0) -> "np.ndarray | None":
-        """Record audio with webrtcvad silence detection.
+        """Record audio with VAD-based silence detection (ONNX, no torch).
 
         Stops when ``silence_after_speech`` seconds of non-speech detected
         after the user started talking.  Gives up after ``no_speech_timeout``
         if no speech is detected at all.  Hard cap at ``max_duration``.
         """
-        import torch
-        from silero_vad import load_silero_vad, VADIterator
-
-        model = load_silero_vad()
-        vad_iter = VADIterator(
-            model,
-            threshold=0.5,
-            sampling_rate=self._capture.sample_rate,
-            min_silence_duration_ms=int(silence_after_speech * 1000),
-            speech_pad_ms=30,
-        )
+        if self._vad is None:
+            from openocto.vad.silero import SileroVAD
+            from openocto.config import VADConfig
+            self._vad = SileroVAD(VADConfig(
+                threshold=0.5,
+                silence_duration=silence_after_speech,
+            ))
+        else:
+            self._vad._silence_duration = silence_after_speech
+            self._vad.reset()
 
         await self._state_machine.transition("start_recording")
         self._capture.start_recording()
@@ -266,7 +272,6 @@ class OpenOctoApp:
         speech_detected = False
         speech_ended = False
         last_chunk_idx = -1
-        window = 512  # silero-vad requires 512-sample chunks at 16kHz
         loop = asyncio.get_event_loop()
         t0 = loop.time()
 
@@ -281,7 +286,7 @@ class OpenOctoApp:
                 if not speech_detected and elapsed >= no_speech_timeout:
                     self._capture.stop_recording()
                     print(" " * 60, end="\r")
-                    vad_iter.reset_states()
+                    self._vad.reset()
                     await self._state_machine.transition("cancel")
                     return None
 
@@ -290,39 +295,31 @@ class OpenOctoApp:
 
                 secs = int(elapsed)
                 if speech_detected:
-                    print(f"🎤 Recording... {secs}s ", end="\r", flush=True)
+                    print(f"\U0001f3a4 Recording... {secs}s ", end="\r", flush=True)
                 else:
-                    print(f"🎤 Listening... {secs}s ", end="\r", flush=True)
+                    print(f"\U0001f3a4 Listening... {secs}s ", end="\r", flush=True)
 
-                # Feed new audio to VADIterator in 512-sample chunks
+                # Feed new audio chunks to the ONNX VAD
                 while True:
                     result = self._capture.get_latest_chunk(after=last_chunk_idx)
                     if result is None:
                         break
                     chunk, last_chunk_idx = result
 
-                    # Convert int16 → float32 [-1, 1]
-                    audio_f32 = chunk.astype(np.float32) / 32768.0
-
-                    for i in range(0, len(audio_f32) - window + 1, window):
-                        frame = torch.from_numpy(audio_f32[i:i + window])
-                        event = vad_iter(frame, return_seconds=True)
-                        if event:
-                            if "start" in event:
-                                speech_detected = True
-                            elif "end" in event:
-                                speech_ended = True
-                                break
-                    if speech_ended:
+                    is_speech = self._vad.is_speech(chunk)
+                    if is_speech:
+                        speech_detected = True
+                    if speech_detected and self._vad.should_stop_recording(chunk, speech=is_speech):
+                        speech_ended = True
                         break
 
                 await asyncio.sleep(0.05)
         except Exception:
             self._capture.stop_recording()
-            vad_iter.reset_states()
+            self._vad.reset()
             raise
 
-        vad_iter.reset_states()
+        self._vad.reset()
         audio = self._capture.stop_recording()
         print(" " * 60, end="\r")
 
@@ -359,7 +356,7 @@ class OpenOctoApp:
         except Exception as e:
             logger.debug("Wake word pipeline error", exc_info=True)
             error_msg = self._friendly_error(e)
-            print(f"\n❌ {error_msg}")
+            print(f"\n{CROSS} {error_msg}")
             self._capture.stop_recording()
             self._state_machine.reset()
         finally:
@@ -387,7 +384,7 @@ class OpenOctoApp:
             await self._handle_audio(audio, silent=True)
         except Exception as e:
             logger.debug("Auto-listen error", exc_info=True)
-            print(f"\n❌ Error: {e}")
+            print(f"\n{CROSS} Error: {e}")
             self._capture.stop_recording()
             self._state_machine.reset()
         finally:
@@ -410,7 +407,7 @@ class OpenOctoApp:
     async def _start_recording(self) -> None:
         await self._state_machine.transition("start_recording")
         self._capture.start()
-        print("🎤 Recording... (release [Space] to stop)", end="\r", flush=True)
+        print(f"{MIC} Recording... (release [Space] to stop)", end="\r", flush=True)
 
     async def _stop_recording(self) -> None:
         self._capture.stop()
@@ -418,7 +415,7 @@ class OpenOctoApp:
         print(" " * 50, end="\r")  # clear the recording line
 
         if audio.size == 0:
-            print("⚠️  No audio captured.")
+            print(f"{WARN}  No audio captured.")
             await self._state_machine.transition("cancel")
             return
 
@@ -435,12 +432,16 @@ class OpenOctoApp:
         try:
             # Transcribe
             await self._state_machine.transition("stop_recording")
+            if self._stt is None:
+                print(f"{WARN}  STT not available. Install pywhispercpp: pip install -e .[audio]")
+                await self._state_machine.transition("cancel")
+                return
             result = await asyncio.to_thread(self._stt.transcribe, audio)
             await self._event_bus.publish(EventType.STT_RESULT, {"text": result.text, "language": result.language})
 
             if not result.text.strip():
                 if not silent:
-                    print("⚠️  Could not transcribe audio.")
+                    print(f"{WARN}  Could not transcribe audio.")
                 await self._state_machine.transition("cancel")
                 return
 
@@ -545,7 +546,7 @@ class OpenOctoApp:
                 print("\r", end="", flush=True)  # clear spinner line
             logger.debug("Pipeline error", exc_info=True)
             error_msg = self._friendly_error(e)
-            print(f"\n❌ {error_msg}")
+            print(f"\n{CROSS} {error_msg}")
             print("   Say 'Hi Octo' to try again.\n")
             self._state_machine.reset()
             self._last_error = True
@@ -567,17 +568,17 @@ class OpenOctoApp:
         self._init_components()
 
         # Health check: verify AI backend responds before starting
-        print(f"🧠 Checking AI backend ({self._ai_router.active_backend_name})...")
+        print(f"{WRENCH} Checking AI backend ({self._ai_router.active_backend_name})...")
         ok, msg = await self._ai_router.health_check()
         if ok:
-            print(f"✅ {msg}\n")
+            print(f"{CHECK} {msg}\n")
         else:
-            print(f"\n⚠️  AI backend is not responding: {msg}")
+            print(f"\n{WARN}  AI backend is not responding: {msg}")
             print("   The assistant may not be able to answer your questions.")
             print("   Check your API key, network connection, or proxy.\n")
 
         header = (
-            f"🐙 OpenOcto v{__version__} | "
+            f"{OCTOPUS} OpenOcto v{__version__} | "
             f"Persona: {self._persona.display_name} | "
             f"AI: {self._ai_router.active_backend_name}"
         )
@@ -600,7 +601,7 @@ class OpenOctoApp:
         finally:
             self._capture.stop_stream()
             self._player.stop()
-            print("\n👋 Bye, see you soon! Run `openocto start` to come back.")
+            print("\n Bye, see you soon! Run `openocto start` to come back.")
 
     async def _run_ptt_mode(self, header: str) -> None:
         """Push-to-talk: hold Space to record."""
@@ -623,4 +624,4 @@ class OpenOctoApp:
             listener.stop()
             self._capture.stop()
             self._player.stop()
-            print("\n👋 Bye, see you soon! Run `openocto start` to come back.")
+            print("\n Bye, see you soon! Run `openocto start` to come back.")
