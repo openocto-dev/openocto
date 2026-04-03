@@ -28,6 +28,49 @@ _EXTRA_PATH_DIRS = [
 _PATH_SEP = ";" if os.name == "nt" else ":"
 
 
+def _patch_proxy_for_windows() -> None:
+    """
+    Patch claude-max-api-proxy's manager.js to use cmd.exe on Windows.
+
+    Node.js spawn() cannot execute .cmd files directly without shell:true,
+    and shell:true breaks argument passing. The fix wraps the spawn call
+    with cmd.exe /c so .cmd shims are found and args are passed correctly.
+    """
+    if os.name != "nt":
+        return
+    manager_js = os.path.join(
+        os.environ.get("APPDATA", ""),
+        "npm", "node_modules", "claude-max-api-proxy",
+        "dist", "subprocess", "manager.js",
+    )
+    if not os.path.isfile(manager_js):
+        return
+    with open(manager_js, encoding="utf-8") as f:
+        content = f.read()
+    if "_spawnCmd" in content:
+        return  # already patched
+
+    patched = content.replace(
+        'this.process = spawn("claude", args, {',
+        'const _spawnCmd = process.platform === "win32" ? "cmd.exe" : "claude";\n'
+        '                const _spawnArgs = process.platform === "win32" ? ["/c", "claude"].concat(args) : args;\n'
+        '                this.process = spawn(_spawnCmd, _spawnArgs, {',
+    )
+    patched = patched.replace(
+        'const proc = spawn("claude", ["--version"], { stdio: "pipe" });',
+        'const _verifyCmd = process.platform === "win32" ? "cmd.exe" : "claude";\n'
+        '        const _verifyArgs = process.platform === "win32" ? ["/c", "claude", "--version"] : ["--version"];\n'
+        '        const proc = spawn(_verifyCmd, _verifyArgs, { stdio: "pipe" });',
+    )
+    if patched == content:
+        logger.debug("proxy patch: nothing to replace in manager.js")
+        return
+
+    with open(manager_js, "w", encoding="utf-8") as f:
+        f.write(patched)
+    logger.info("Patched claude-max-api-proxy manager.js for Windows")
+
+
 def _enriched_env() -> dict[str, str]:
     """Return a copy of os.environ with common Node.js directories on PATH."""
     env = os.environ.copy()
@@ -59,17 +102,26 @@ def is_proxy_running() -> bool:
 
 def start_proxy() -> subprocess.Popen | None:
     """Start claude-max-proxy in the background. Returns the process, or None on failure."""
+    _patch_proxy_for_windows()
+
     env = _enriched_env()
     cmd = shutil.which("claude-max-api", path=env.get("PATH"))
     if not cmd:
         logger.warning("claude-max-api not found — install with: npm install -g claude-max-api-proxy")
         return None
 
+    # On Windows, .cmd scripts must be run via cmd.exe /c
+    if os.name == "nt" and cmd.lower().endswith(".cmd"):
+        popen_args = ["cmd.exe", "/c", cmd]
+    else:
+        popen_args = [cmd]
+
     logger.info("Starting claude-max-api-proxy...")
     log_path = os.path.join(os.path.expanduser("~"), ".openocto", "proxy.log")
+    os.makedirs(os.path.dirname(log_path), exist_ok=True)
     log_file = open(log_path, "w")  # noqa: SIM115
     proc = subprocess.Popen(
-        [cmd],
+        popen_args,
         stdout=log_file,
         stderr=log_file,
         env=env,
