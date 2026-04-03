@@ -4,19 +4,6 @@
 #   Remote:  irm https://raw.githubusercontent.com/.../install.ps1 | iex
 #   Local:   .\install.ps1   (from the project root)
 
-# --- Self-download when piped (irm | iex) ---
-# When run via pipe, encoding and interactive prompts may break.
-# Download to a temp file and dot-source it in the same session.
-if (-not $env:OPENOCTO_INSTALLER_RUNNING) {
-    $env:OPENOCTO_INSTALLER_RUNNING = "1"
-    $tmpScript = Join-Path $env:TEMP "openocto-install.ps1"
-    Invoke-WebRequest -Uri "https://raw.githubusercontent.com/openocto-dev/openocto/main/install.ps1" -OutFile $tmpScript -UseBasicParsing
-    . $tmpScript
-    Remove-Item $tmpScript -ErrorAction SilentlyContinue
-    $env:OPENOCTO_INSTALLER_RUNNING = $null
-    return
-}
-
 $ErrorActionPreference = "Stop"
 
 $InstallerVersion = "1.0.1"
@@ -27,6 +14,17 @@ function Write-Info($msg)  { Write-Host $msg -ForegroundColor Cyan }
 function Write-Ok($msg)    { Write-Host "✓ $msg" -ForegroundColor Green }
 function Write-Warn($msg)  { Write-Host "⚠ $msg" -ForegroundColor Yellow }
 function Write-Fail($msg)  { Write-Host "✗ $msg" -ForegroundColor Red; throw $msg }
+
+function Read-Prompt($msg) {
+    # Read-Host hangs when stdin is a pipe (irm | iex).
+    # Read directly from the console instead.
+    Write-Host $msg -NoNewline -ForegroundColor Cyan
+    try {
+        return [Console]::ReadLine()
+    } catch {
+        return ""
+    }
+}
 
 function Find-ProjectRoot {
     $dir = Get-Location
@@ -71,7 +69,7 @@ if (-not $py) {
 
     # Try winget
     if (Get-Command winget -ErrorAction SilentlyContinue) {
-        $install = Read-Host "  Install Python 3.13 via winget? [Y/n]"
+        $install = Read-Prompt "  Install Python 3.13 via winget? [Y/n]: "
         if ($install -ne "n" -and $install -ne "N") {
             Write-Info "Installing Python 3.13..."
             winget install Python.Python.3.13 --accept-source-agreements --accept-package-agreements
@@ -105,7 +103,7 @@ if ($ProjectDir) {
         Write-Warn "Git is required but not found."
         Write-Host ""
         if (Get-Command winget -ErrorAction SilentlyContinue) {
-            $installGit = Read-Host "  Install Git via winget? [Y/n]"
+            $installGit = Read-Prompt "  Install Git via winget? [Y/n]: "
             if ($installGit -ne "n" -and $installGit -ne "N") {
                 Write-Info "Installing Git..."
                 winget install Git.Git --accept-source-agreements --accept-package-agreements
@@ -180,7 +178,7 @@ if ($env:PATH -notlike "*$OctoBin*") {
 
 # 7. Install openwakeword (optional)
 Write-Host ""
-$installWW = Read-Host "Install wake word detection ('Hey Octo!')? [y/N]"
+$installWW = Read-Prompt "Install wake word detection ('Hey Octo!')? [y/N]: "
 if ($installWW -eq "y" -or $installWW -eq "Y") {
     Write-Info "Installing openwakeword..."
     try {
@@ -197,7 +195,7 @@ if ($installWW -eq "y" -or $installWW -eq "Y") {
 if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
     Write-Host ""
     if (Get-Command winget -ErrorAction SilentlyContinue) {
-        $installNode = Read-Host "Node.js is required for Claude proxy. Install via winget? [Y/n]"
+        $installNode = Read-Prompt "Node.js is required for Claude proxy. Install via winget? [Y/n]: "
         if ($installNode -ne "n" -and $installNode -ne "N") {
             Write-Info "Installing Node.js..."
             winget install OpenJS.NodeJS.LTS --accept-source-agreements --accept-package-agreements
