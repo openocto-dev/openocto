@@ -183,3 +183,51 @@ gh release create wheels-arm64-v1 `
 ```
 
 The installer (`install.ps1`) downloads these automatically on ARM64 Windows.
+
+---
+
+## Runtime issues on Windows ARM64
+
+### claude-max-api-proxy: UTF-8 broken via cmd.exe
+
+`claude-max-api-proxy` uses `spawn("claude", args)` to call Claude CLI.
+On Windows, `claude` is a `.cmd` shim and Node.js `spawn()` can't execute
+`.cmd` files without `shell:true`. The initial fix wrapped it with
+`cmd.exe /c claude`, but **cmd.exe converts UTF-8 arguments to the local
+codepage** (cp866/cp1251), destroying Cyrillic and other non-ASCII text.
+
+**Fix:** `proxy.py` auto-patches `manager.js` on first run. Instead of
+`cmd.exe /c claude`, it spawns `node.exe` directly with the cli.js path:
+
+```javascript
+// Before (broken UTF-8):
+spawn("cmd.exe", ["/c", "claude", ...args])
+
+// After (preserves UTF-8):
+const cliJs = process.env.APPDATA + "\\npm\\node_modules\\@anthropic-ai\\claude-code\\cli.js";
+spawn(process.execPath, [cliJs, ...args])  // process.execPath = node.exe
+```
+
+### Silero VAD unreliable on ARM64 onnxruntime
+
+Silero VAD v5 produces near-zero speech probabilities on ARM64 onnxruntime
+(0.001-0.004 even on loud speech). This is likely an onnxruntime ARM64 issue.
+
+**Fix:** `SileroVAD.is_speech()` uses **raw RMS** (before mic gain) as a
+fallback: `prob > threshold OR rms_raw > rms_speech_threshold`. The calibration
+wizard measures raw RMS levels and sets the threshold between silence and speech.
+
+### High noise floor in VMs (UTM, Parallels)
+
+Virtual machines often have a high noise floor on the emulated microphone
+(raw RMS 100-200 during silence vs 10-20 on bare metal). The calibration
+wizard accounts for this by setting `rms_speech_threshold` at 60% between
+measured silence and speech RMS levels.
+
+### AudioCapture mic_gain
+
+`mic_gain` is applied in the audio callback before data reaches VAD and the
+recording buffer. This ensures both wake word detection and whisper
+transcription see the amplified signal. The `mic_gain` value is stored in
+`~/.openocto/config.yaml` under `vad.mic_gain` and set by the calibration
+wizard (`openocto setup --from-step 6`).

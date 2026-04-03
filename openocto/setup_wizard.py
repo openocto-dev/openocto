@@ -628,9 +628,11 @@ def _step_mic_calibration(input_device: int | str | None) -> tuple[float | None,
     mic_gain: float | None = None if gain < 1.5 else gain
 
     # --- Compute VAD threshold ---
+    # Silero VAD is unreliable on some platforms (e.g. ARM64 onnxruntime),
+    # so we also calibrate a raw RMS threshold as a fallback.
     vad_threshold = 0.3  # safe default
     if vad_available:
-        def apply_gain(a: np.ndarray) -> np.ndarray:
+        def apply_gain_f32(a: np.ndarray) -> np.ndarray:
             f = a.astype(np.float32) / 32768.0
             if mic_gain is not None:
                 return np.clip(f * mic_gain, -1.0, 1.0)
@@ -639,8 +641,8 @@ def _step_mic_calibration(input_device: int | str | None) -> tuple[float | None,
                 return np.clip(f * (0.5 / peak), -1.0, 1.0)
             return f
 
-        silence_gained = (apply_gain(silence_audio) * 32768).astype(np.int16)
-        speech_gained = (apply_gain(speech_audio) * 32768).astype(np.int16)
+        silence_gained = (apply_gain_f32(silence_audio) * 32768).astype(np.int16)
+        speech_gained = (apply_gain_f32(speech_audio) * 32768).astype(np.int16)
 
         silence_probs = vad_probs(silence_gained)
         speech_probs = vad_probs(speech_gained)
@@ -651,22 +653,29 @@ def _step_mic_calibration(input_device: int | str | None) -> tuple[float | None,
         click.echo(f"  {CHECK} VAD silence max: {noise_max:.3f}  |  speech max: {speech_max:.3f}")
 
         if speech_max < 0.2:
-            click.secho(f"  {WARN}  VAD couldn't detect speech. Using default threshold 0.3.", fg="yellow")
+            click.secho(f"  {WARN}  Silero VAD couldn't detect speech — RMS fallback will be used.", fg="yellow")
         else:
-            # Threshold = midpoint between noise ceiling and speech floor
             speech_min = float(np.percentile(speech_probs, 25))
             threshold = round((noise_max + speech_min) / 2, 2)
             threshold = max(0.1, min(threshold, 0.7))
             vad_threshold = threshold
             click.secho(f"  {CHECK} VAD threshold set to {vad_threshold}", fg="green")
 
-    # --- Compute RMS speech threshold ---
+    # --- Compute RMS speech threshold on RAW signal (before gain) ---
+    # This is critical: VAD uses raw RMS as fallback, so the threshold
+    # must match raw signal levels, not gained levels.
     silence_rms = float(np.sqrt(np.mean(silence_audio.astype(np.float32) ** 2)))
     speech_rms = float(np.sqrt(np.mean(speech_audio.astype(np.float32) ** 2)))
-    # Midpoint between silence and speech, with a margin above silence
-    rms_threshold = int(silence_rms + (speech_rms - silence_rms) * 0.4)
-    rms_threshold = max(100, min(rms_threshold, 2000))
-    click.echo(f"  {CHECK} RMS silence: {silence_rms:.0f}  |  speech: {speech_rms:.0f}  |  threshold: {rms_threshold}")
+
+    if speech_rms > silence_rms * 1.5:
+        # Good separation — threshold at 60% between silence and speech
+        rms_threshold = int(silence_rms + (speech_rms - silence_rms) * 0.6)
+    else:
+        # Poor separation (noisy VM, bad mic) — use 2x silence RMS
+        rms_threshold = int(silence_rms * 2.0)
+    rms_threshold = max(50, min(rms_threshold, 5000))
+
+    click.echo(f"  {CHECK} RMS (raw) silence: {silence_rms:.0f}  |  speech: {speech_rms:.0f}  |  threshold: {rms_threshold}")
 
     if mic_gain is None:
         click.secho(f"  {CHECK} Microphone level is good. Auto-gain enabled.", fg="green")

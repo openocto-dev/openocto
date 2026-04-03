@@ -30,11 +30,14 @@ _PATH_SEP = ";" if os.name == "nt" else ":"
 
 def _patch_proxy_for_windows() -> None:
     """
-    Patch claude-max-api-proxy's manager.js to use cmd.exe on Windows.
+    Patch claude-max-api-proxy's manager.js for Windows.
 
-    Node.js spawn() cannot execute .cmd files directly without shell:true,
-    and shell:true breaks argument passing. The fix wraps the spawn call
-    with cmd.exe /c so .cmd shims are found and args are passed correctly.
+    Two issues on Windows:
+    1. Node.js spawn() cannot execute .cmd files without shell:true
+    2. cmd.exe mangles UTF-8 arguments (Cyrillic, CJK, etc.)
+
+    The fix bypasses cmd.exe entirely: instead of spawning "claude" (a .cmd shim),
+    we spawn node.exe directly with the claude-code cli.js script path.
     """
     if os.name != "nt":
         return
@@ -50,17 +53,28 @@ def _patch_proxy_for_windows() -> None:
     if "_spawnCmd" in content:
         return  # already patched
 
+    # Patch 1: start() — spawn node.exe with cli.js directly (preserves UTF-8)
     patched = content.replace(
         'this.process = spawn("claude", args, {',
-        'const _spawnCmd = process.platform === "win32" ? "cmd.exe" : "claude";\n'
-        '                const _spawnArgs = process.platform === "win32" ? ["/c", "claude"].concat(args) : args;\n'
+        '// Windows: bypass cmd.exe to preserve UTF-8 in arguments\n'
+        '                let _spawnCmd = "claude";\n'
+        '                let _spawnArgs = args;\n'
+        '                if (process.platform === "win32") {\n'
+        '                    const npmDir = process.env.APPDATA ? process.env.APPDATA + "\\\\npm" : "";\n'
+        '                    const cliJs = npmDir + "\\\\node_modules\\\\@anthropic-ai\\\\claude-code\\\\cli.js";\n'
+        '                    _spawnCmd = process.execPath;\n'
+        '                    _spawnArgs = [cliJs, ...args];\n'
+        '                }\n'
         '                this.process = spawn(_spawnCmd, _spawnArgs, {',
     )
+    # Patch 2: verifyClaude() — same approach for version check
     patched = patched.replace(
         'const proc = spawn("claude", ["--version"], { stdio: "pipe" });',
-        'const _verifyCmd = process.platform === "win32" ? "cmd.exe" : "claude";\n'
-        '        const _verifyArgs = process.platform === "win32" ? ["/c", "claude", "--version"] : ["--version"];\n'
-        '        const proc = spawn(_verifyCmd, _verifyArgs, { stdio: "pipe" });',
+        'const _vCmd = process.platform === "win32" ? process.execPath : "claude";\n'
+        '        const _vArgs = process.platform === "win32"\n'
+        '            ? [(process.env.APPDATA || "") + "\\\\npm\\\\node_modules\\\\@anthropic-ai\\\\claude-code\\\\cli.js", "--version"]\n'
+        '            : ["--version"];\n'
+        '        const proc = spawn(_vCmd, _vArgs, { stdio: "pipe" });',
     )
     if patched == content:
         logger.debug("proxy patch: nothing to replace in manager.js")

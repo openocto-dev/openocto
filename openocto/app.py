@@ -36,7 +36,7 @@ class OpenOctoApp:
         self._state_machine = StateMachine(self._event_bus)
 
         # Audio
-        self._capture = AudioCapture(config.audio)
+        self._capture = AudioCapture(config.audio, mic_gain=config.vad.mic_gain)
         self._player = AudioPlayer(config.audio)
 
         # Components initialized lazily (need model downloads)
@@ -257,11 +257,9 @@ class OpenOctoApp:
         """
         if self._vad is None:
             from openocto.vad.silero import SileroVAD
-            from openocto.config import VADConfig
-            self._vad = SileroVAD(VADConfig(
-                threshold=0.5,
-                silence_duration=silence_after_speech,
-            ))
+            vad_config = self._config.vad
+            vad_config.silence_duration = silence_after_speech
+            self._vad = SileroVAD(vad_config)
         else:
             self._vad._silence_duration = silence_after_speech
             self._vad.reset()
