@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from openocto.utils.icons import DOWN, WARN
+
 from openocto.wakeword.base import WakeWordDetector
 
 if TYPE_CHECKING:
@@ -25,7 +27,7 @@ def _ensure_builtin_downloaded(model_name: str) -> None:
     """
     try:
         from openwakeword.utils import download_models
-        print(f"⬇️  Downloading wake word feature models...")
+        print(f"{DOWN}  Downloading wake word feature models...")
         download_models(model_names=[model_name])
     except Exception as e:
         logger.warning("Failed to download openwakeword models: %s", e)
@@ -83,7 +85,7 @@ class OpenWakeWordDetector(WakeWordDetector):
 
         # Built-in model (or custom model unavailable) — load by name.
         if is_custom:
-            print(f"⚠️  Wake word model '{config.model}' not available — using {BUILTIN_FALLBACK} instead.")
+            print(f"{WARN}  Wake word model '{config.model}' not available - using {BUILTIN_FALLBACK} instead.")
             builtin_name = BUILTIN_FALLBACK
         else:
             builtin_name = config.model
@@ -110,3 +112,5 @@ class OpenWakeWordDetector(WakeWordDetector):
 
     def reset(self) -> None:
         self._last_detection = 0.0
+        if hasattr(self._oww, "reset"):
+            self._oww.reset()

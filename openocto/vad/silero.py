@@ -34,6 +34,7 @@ class SileroVAD(VADEngine):
         self._threshold = config.threshold if config else 0.5
         self._silence_duration = config.silence_duration if config else 3.5
         self._mic_gain: float | None = config.mic_gain if config else None
+        self._rms_threshold: int = config.rms_speech_threshold if config else 300
         self._sample_rate = np.array(16000, dtype=np.int64)
         self._silence_start: float | None = None
         self.last_prob: float = 0.0
@@ -92,14 +93,28 @@ class SileroVAD(VADEngine):
         return audio_f32
 
     def is_speech(self, audio_chunk: np.ndarray) -> bool:
-        """Return True if speech probability > threshold."""
-        audio_f32 = audio_chunk.flatten().astype(np.float32) / 32768.0
-        audio_f32 = self._apply_gain(audio_f32)
+        """Return True if speech detected by Silero VAD or raw RMS exceeds threshold.
 
+        On some platforms (e.g. ARM64 onnxruntime) Silero VAD probabilities
+        can be unreliable, so RMS on the RAW signal (before gain) acts as fallback.
+        Gain is only applied to audio fed to the Silero model.
+        """
+        chunk_i16 = audio_chunk.flatten()
+
+        # RMS on raw signal (before gain) — reliable speech/silence discriminator
+        rms_raw = float(np.sqrt(np.mean(chunk_i16.astype(np.float32) ** 2)))
+
+        # Silero inference on gained signal
+        audio_f32 = chunk_i16.astype(np.float32) / 32768.0
+        audio_f32 = self._apply_gain(audio_f32)
         prob = self._infer_v5(audio_f32) if self._version == "v5" else self._infer_v4(audio_f32)
         self.last_prob = prob
-        logger.debug("VAD prob=%.3f threshold=%.2f", prob, self._threshold)
-        return prob > self._threshold
+        self.last_rms = rms_raw
+
+        result = prob > self._threshold or rms_raw > self._rms_threshold
+        logger.debug("VAD prob=%.3f rms_raw=%.0f (thr=%d) → %s",
+                      prob, rms_raw, self._rms_threshold, result)
+        return result
 
     def should_stop_recording(self, audio_chunk: np.ndarray, speech: bool | None = None) -> bool:
         """Return True when silence has lasted >= silence_duration seconds.

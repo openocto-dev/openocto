@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "openocto-dev"
-version = "0.1.0"
+version = "0.1.1"
 description = "Open-source personal AI assistant constructor with voice control and persona system"
 license = {text = "BSL-1.1"}
 requires-python = ">=3.10"
@@ -20,18 +20,19 @@ dependencies = [
     "numpy>=1.24",
     "sounddevice>=0.4.6",
     "pynput>=1.7",
-    "pywhispercpp>=1.2.0",
-    "piper-tts>=1.2.0",
     "onnxruntime>=1.16",
     "requests>=2.28",
     "tqdm>=4.64",
     "anthropic>=0.40",
     "openai>=1.0",
     "questionary>=2.0",
-    "silero-vad>=6.0",
 ]
 
 [project.optional-dependencies]
+audio = [
+    "pywhispercpp>=1.2.0",
+    "piper-tts>=1.2.0",
+]
 dev = [
     "pytest>=7.0",
     "pytest-asyncio>=0.21",
@@ -40,7 +41,7 @@ search = [
     "sqlite-vec>=0.1",
     "fastembed>=0.3",
 ]
-silero = [
+silero-tts = [
     "torch>=2.0",
 ]
 wakeword = [

@@ -3,10 +3,21 @@
 #
 # Works in two modes:
 #   Remote:  curl -sSL https://raw.githubusercontent.com/.../install.sh | bash
-#   Local:   ./scripts/install.sh   (from the project root)
+#   Local:   ./install.sh   (from the project root)
 
 set -euo pipefail
 
+# --- Self-download when piped (curl | bash) ---
+# When run via pipe, stdin is the script itself — interactive prompts and
+# subprocesses (brew, etc.) break. Re-execute from a temp file instead.
+if [ -z "${OPENOCTO_INSTALLER_RUNNING:-}" ] && ! [ -t 0 ]; then
+    TMPSCRIPT=$(mktemp /tmp/openocto-install-XXXXXX)
+    curl -sSL "https://raw.githubusercontent.com/openocto-dev/openocto/main/install.sh" -o "$TMPSCRIPT"
+    export OPENOCTO_INSTALLER_RUNNING=1
+    exec bash "$TMPSCRIPT" </dev/tty
+fi
+
+INSTALLER_VERSION="1.0.1"
 REPO_URL="https://github.com/openocto-dev/openocto.git"
 MIN_PYTHON="3.10"
 
@@ -68,7 +79,7 @@ find_project_root() {
 
 # --- Main ---
 echo ""
-echo -e "${BOLD}${CYAN}🐙 OpenOcto Installer${NC}"
+echo -e "${BOLD}${CYAN}🐙 OpenOcto Installer${NC}  ${CYAN}v${INSTALLER_VERSION}${NC}"
 echo ""
 
 # 1. Check Python (offer to install via Homebrew on macOS)
@@ -84,7 +95,10 @@ if ! PYTHON=$(find_python); then
             read -r -p "$(echo -e "${CYAN}Install Homebrew and Python? [Y/n]: ${NC}")" INSTALL_BREW </dev/tty
             if [[ ! "$INSTALL_BREW" =~ ^[Nn]$ ]]; then
                 info "Installing Homebrew..."
-                /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+                if ! /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" < /dev/tty; then
+                    echo ""
+                    fail "Homebrew installation failed.\n  Make sure your user has admin rights (System Settings → Users & Groups).\n  Then try again, or install manually:\n    /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"\n    brew install python@3.13"
+                fi
                 # Add brew to PATH for this session (Apple Silicon vs Intel)
                 if [ -f /opt/homebrew/bin/brew ]; then
                     eval "$(/opt/homebrew/bin/brew shellenv)"
@@ -135,7 +149,10 @@ else
 
     if [ -d "$INSTALL_DIR/.git" ]; then
         info "Updating existing installation in $INSTALL_DIR..."
-        git -C "$INSTALL_DIR" pull --quiet
+        git -C "$INSTALL_DIR" fetch --quiet origin
+        git -C "$INSTALL_DIR" reset --hard origin/main --quiet
+        # Clear stale bytecode cache to avoid running outdated code after update
+        find "$INSTALL_DIR" -name "__pycache__" -not -path "*/.venv/*" -exec rm -rf {} + 2>/dev/null
         ok "Updated"
     else
         info "Cloning OpenOcto to $INSTALL_DIR..."
@@ -214,7 +231,42 @@ else
     info "Skipping wake word detection (you can enable it later with: pip install openwakeword)"
 fi
 
-# 9. Install claude-max-api-proxy (optional, for Claude subscription users)
+# 9. Ensure Node.js/npm is available (needed for Claude proxy)
+if ! command -v npm &>/dev/null; then
+    echo ""
+    if [ "$(uname)" = "Darwin" ]; then
+        if command -v brew &>/dev/null; then
+            read -r -p "$(echo -e "${CYAN}Node.js is required for Claude proxy. Install via Homebrew? [Y/n]: ${NC}")" INSTALL_NODE </dev/tty
+            if [[ ! "$INSTALL_NODE" =~ ^[Nn]$ ]]; then
+                info "Installing Node.js..."
+                brew install node
+                ok "Node.js installed"
+            fi
+        else
+            warn "npm not found. Install Node.js for Claude proxy support:"
+            echo "     brew install node   (macOS with Homebrew)"
+            echo "     https://nodejs.org  (manual install)"
+        fi
+    elif command -v apt-get &>/dev/null; then
+        read -r -p "$(echo -e "${CYAN}Node.js is required for Claude proxy. Install via apt? [Y/n]: ${NC}")" INSTALL_NODE </dev/tty
+        if [[ ! "$INSTALL_NODE" =~ ^[Nn]$ ]]; then
+            info "Installing Node.js..."
+            sudo apt-get update -qq && sudo apt-get install -y -qq nodejs npm
+            ok "Node.js installed"
+        fi
+    elif command -v dnf &>/dev/null; then
+        read -r -p "$(echo -e "${CYAN}Node.js is required for Claude proxy. Install via dnf? [Y/n]: ${NC}")" INSTALL_NODE </dev/tty
+        if [[ ! "$INSTALL_NODE" =~ ^[Nn]$ ]]; then
+            info "Installing Node.js..."
+            sudo dnf install -y nodejs npm
+            ok "Node.js installed"
+        fi
+    else
+        warn "npm not found. Install Node.js from https://nodejs.org for Claude proxy support."
+    fi
+fi
+
+# 10. Install claude-max-api-proxy (optional, for Claude subscription users)
 if command -v npm &>/dev/null; then
     if ! command -v claude-max-api &>/dev/null; then
         info "Installing claude-max-api-proxy (for Claude subscription users)..."
@@ -224,17 +276,17 @@ if command -v npm &>/dev/null; then
     else
         ok "claude-max-api-proxy already installed"
     fi
+    # claude-max-api-proxy requires Claude Code CLI to work
+    if command -v claude-max-api &>/dev/null && ! command -v claude &>/dev/null; then
+        info "Installing Claude Code CLI (required by claude-max-api-proxy)..."
+        npm install -g @anthropic-ai/claude-code --quiet && ok "Claude Code CLI installed" || warn "Failed to install Claude Code CLI (optional)"
+    fi
 else
     warn "npm not found — skipping claude-max-api-proxy (optional, needed for Claude subscription mode)"
 fi
 
-# 10. Run setup wizard
+# 11. Run setup wizard
 echo ""
-ok "Installation complete!"
+info "Starting setup wizard..."
 echo ""
-info "Next step — run the setup wizard:"
-echo -e "  ${BOLD}openocto setup${NC}"
-echo ""
-info "Then start the assistant:"
-echo -e "  ${BOLD}openocto start${NC}"
-echo ""
+openocto setup

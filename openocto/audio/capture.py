@@ -46,17 +46,31 @@ def _resolve_device(device: int | str | None, kind: str) -> int | None:
 class AudioCapture:
     """Captures audio from the default (or configured) microphone."""
 
-    def __init__(self, config: AudioConfig | None = None) -> None:
+    _AUTO_GAIN_TARGET = 0.5  # target peak for auto-gain normalization
+
+    def __init__(self, config: AudioConfig | None = None, mic_gain: float | None = None) -> None:
         self._sample_rate = config.sample_rate if config else SAMPLE_RATE
         self._blocksize = config.blocksize if config else BLOCKSIZE
         raw = config.input_device if config else None
         self._input_device = _resolve_device(raw, kind="input")
+        self._mic_gain = mic_gain
 
         self._buffer: list[np.ndarray] = []
         self._lock = threading.Lock()
         self._stream: sd.InputStream | None = None
         self._recording = False
         self._chunk_callback = None  # called with every chunk (for wake word)
+
+    def _apply_gain(self, audio_f32: np.ndarray) -> np.ndarray:
+        """Apply mic gain: fixed multiplier or auto-gain based on peak."""
+        if self._mic_gain is not None:
+            return np.clip(audio_f32 * self._mic_gain, -1.0, 1.0)
+        # Auto-gain: boost speech-level chunks, leave silence alone
+        peak = np.abs(audio_f32).max()
+        if peak > 0.01:
+            gain = self._AUTO_GAIN_TARGET / peak
+            return np.clip(audio_f32 * gain, -1.0, 1.0)
+        return audio_f32
 
     def set_chunk_callback(self, callback) -> None:
         """Register a callback invoked with every audio chunk (flat int16 array).
@@ -71,12 +85,18 @@ class AudioCapture:
             if status:
                 logger.warning("Audio capture status: %s", status)
             mono = indata[:, 0] if indata.ndim > 1 else indata.flatten()
+            # Apply mic gain before passing to VAD and recording buffer
+            mono_f32 = mono.astype(np.float32) / 32768.0
+            mono_f32 = self._apply_gain(mono_f32)
+            mono = np.clip(mono_f32 * 32768.0, -32768, 32767).astype(np.int16)
             if self._chunk_callback:
                 self._chunk_callback(mono.copy())
             if self._recording:
                 with self._lock:
                     self._buffer.append(mono.copy())
         except Exception as e:
+            import sys
+            print(f"Audio callback error: {e}", file=sys.stderr, flush=True)
             logger.error("Audio callback error: %s", e)
 
     def _open_stream(self) -> None:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import atexit
 import logging
+import os
 import shutil
 import subprocess
 import time
@@ -14,6 +15,94 @@ logger = logging.getLogger(__name__)
 
 PROXY_URL = "http://localhost:3456/v1"
 STARTUP_TIMEOUT = 15  # seconds
+
+# Common directories where node/npm binaries live (Homebrew, nvm, volta, npm on Windows)
+_EXTRA_PATH_DIRS = [
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
+    os.path.expanduser("~/.volta/bin"),
+    os.path.join(os.environ.get("APPDATA", ""), "npm"),  # Windows npm global
+    os.path.join(os.environ.get("LOCALAPPDATA", ""), "npm"),  # Windows alt
+]
+
+_PATH_SEP = ";" if os.name == "nt" else ":"
+
+
+def _patch_proxy_for_windows() -> None:
+    """
+    Patch claude-max-api-proxy's manager.js for Windows.
+
+    Two issues on Windows:
+    1. Node.js spawn() cannot execute .cmd files without shell:true
+    2. cmd.exe mangles UTF-8 arguments (Cyrillic, CJK, etc.)
+
+    The fix bypasses cmd.exe entirely: instead of spawning "claude" (a .cmd shim),
+    we spawn node.exe directly with the claude-code cli.js script path.
+    """
+    if os.name != "nt":
+        return
+    manager_js = os.path.join(
+        os.environ.get("APPDATA", ""),
+        "npm", "node_modules", "claude-max-api-proxy",
+        "dist", "subprocess", "manager.js",
+    )
+    if not os.path.isfile(manager_js):
+        return
+    with open(manager_js, encoding="utf-8") as f:
+        content = f.read()
+    if "_spawnCmd" in content:
+        return  # already patched
+
+    # Patch 1: start() — spawn node.exe with cli.js directly (preserves UTF-8)
+    patched = content.replace(
+        'this.process = spawn("claude", args, {',
+        '// Windows: bypass cmd.exe to preserve UTF-8 in arguments\n'
+        '                let _spawnCmd = "claude";\n'
+        '                let _spawnArgs = args;\n'
+        '                if (process.platform === "win32") {\n'
+        '                    const npmDir = process.env.APPDATA ? process.env.APPDATA + "\\\\npm" : "";\n'
+        '                    const cliJs = npmDir + "\\\\node_modules\\\\@anthropic-ai\\\\claude-code\\\\cli.js";\n'
+        '                    _spawnCmd = process.execPath;\n'
+        '                    _spawnArgs = [cliJs, ...args];\n'
+        '                }\n'
+        '                this.process = spawn(_spawnCmd, _spawnArgs, {',
+    )
+    # Patch 2: verifyClaude() — same approach for version check
+    patched = patched.replace(
+        'const proc = spawn("claude", ["--version"], { stdio: "pipe" });',
+        'const _vCmd = process.platform === "win32" ? process.execPath : "claude";\n'
+        '        const _vArgs = process.platform === "win32"\n'
+        '            ? [(process.env.APPDATA || "") + "\\\\npm\\\\node_modules\\\\@anthropic-ai\\\\claude-code\\\\cli.js", "--version"]\n'
+        '            : ["--version"];\n'
+        '        const proc = spawn(_vCmd, _vArgs, { stdio: "pipe" });',
+    )
+    if patched == content:
+        logger.debug("proxy patch: nothing to replace in manager.js")
+        return
+
+    with open(manager_js, "w", encoding="utf-8") as f:
+        f.write(patched)
+    logger.info("Patched claude-max-api-proxy manager.js for Windows")
+
+
+def _enriched_env() -> dict[str, str]:
+    """Return a copy of os.environ with common Node.js directories on PATH."""
+    env = os.environ.copy()
+    current = env.get("PATH", "")
+    dirs_to_add = [d for d in _EXTRA_PATH_DIRS if d and d not in current and os.path.isdir(d)]
+
+    # Explicitly find where claude lives and ensure that dir is on PATH.
+    # On Windows, 'claude' is a .cmd script; Node.js child_process.spawn with
+    # shell:false won't find it unless its directory is explicitly in PATH.
+    claude_exe = shutil.which("claude")
+    if claude_exe:
+        claude_dir = os.path.dirname(claude_exe)
+        if claude_dir not in current:
+            dirs_to_add.insert(0, claude_dir)
+
+    if dirs_to_add:
+        env["PATH"] = _PATH_SEP.join(dirs_to_add) + _PATH_SEP + current
+    return env
 
 
 def is_proxy_running() -> bool:
@@ -27,15 +116,29 @@ def is_proxy_running() -> bool:
 
 def start_proxy() -> subprocess.Popen | None:
     """Start claude-max-proxy in the background. Returns the process, or None on failure."""
-    if not shutil.which("claude-max-api"):
+    _patch_proxy_for_windows()
+
+    env = _enriched_env()
+    cmd = shutil.which("claude-max-api", path=env.get("PATH"))
+    if not cmd:
         logger.warning("claude-max-api not found — install with: npm install -g claude-max-api-proxy")
         return None
 
+    # On Windows, .cmd scripts must be run via cmd.exe /c
+    if os.name == "nt" and cmd.lower().endswith(".cmd"):
+        popen_args = ["cmd.exe", "/c", cmd]
+    else:
+        popen_args = [cmd]
+
     logger.info("Starting claude-max-api-proxy...")
+    log_path = os.path.join(os.path.expanduser("~"), ".openocto", "proxy.log")
+    os.makedirs(os.path.dirname(log_path), exist_ok=True)
+    log_file = open(log_path, "w")  # noqa: SIM115
     proc = subprocess.Popen(
-        ["claude-max-api"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        popen_args,
+        stdout=log_file,
+        stderr=log_file,
+        env=env,
     )
 
     # Wait for the proxy to become responsive

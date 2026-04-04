@@ -20,17 +20,17 @@ One command to install, configure, and download models:
 
 **macOS / Linux:**
 ```bash
-curl -sSL https://raw.githubusercontent.com/openocto-dev/openocto/main/scripts/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/openocto-dev/openocto/main/install.sh | bash
 ```
 
 **Windows (PowerShell):**
 ```powershell
-irm https://raw.githubusercontent.com/openocto-dev/openocto/main/scripts/install.ps1 | iex
+irm https://raw.githubusercontent.com/openocto-dev/openocto/main/install.ps1 | iex
 ```
 
 **Already cloned the repo?** Same script works locally:
 ```bash
-./scripts/install.sh           # macOS / Linux
+./install.sh           # macOS / Linux
 .\scripts\install.ps1          # Windows
 ```
 
@@ -305,9 +305,8 @@ openocto/
 │   └── utils/              # Model downloader, keyboard listener
 ├── personas/octo/          # Default persona
 ├── config/default.yaml     # Default configuration
-├── scripts/
-│   ├── install.sh          # macOS/Linux installer
-│   └── install.ps1         # Windows installer
+├── install.sh              # macOS/Linux installer
+├── install.ps1             # Windows installer
 ├── tests/                  # Unit tests
 └── pyproject.toml
 ```

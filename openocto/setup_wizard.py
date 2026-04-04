@@ -13,13 +13,21 @@ import click
 import questionary
 import yaml
 
+import logging
+logger = logging.getLogger(__name__)
+
 from openocto.config import USER_CONFIG_DIR, USER_CONFIG_PATH, MODELS_DIR
+from openocto.utils.icons import (
+    OK, FAIL, WARN, CHECK, CROSS, STAR, MIC, MIC2, WRENCH, PLUG, USER,
+    GLOBE, BULB, MUTE, REC, BOLT, DOWN, OCTOPUS, FLAG_US, FLAG_RU,
+)
+
 
 
 class Spinner:
     """Simple CLI spinner for long-running operations."""
 
-    FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+    FRAMES = "|/-\\" if sys.platform == "win32" else "\u280b\u2819\u2839\u2838\u283c\u2834\u2826\u2827\u2807\u280f"
 
     def __init__(self, message: str = "") -> None:
         self._message = message
@@ -58,27 +66,53 @@ class Spinner:
         self.stop()
 
 
+def _select(prompt: str, choices: list[questionary.Choice], default=None):
+    """questionary.select with fallback to click when terminal is broken (e.g. curl | bash)."""
+    try:
+        result = questionary.select(prompt, choices=choices, default=default).ask()
+        if result is not None:
+            return result
+        raise SystemExit("Cancelled.")
+    except (OSError, EOFError):
+        # prompt_toolkit can't attach to terminal — fall back to numbered list
+        click.echo()
+        for i, c in enumerate(choices, 1):
+            marker = " (default)" if c.value == default else ""
+            click.echo(f"  {i}. {c.title}{marker}")
+        click.echo()
+        while True:
+            default_num = next((i for i, c in enumerate(choices, 1) if c.value == default), 1)
+            raw = click.prompt(f"  {prompt.strip()}", default=str(default_num))
+            try:
+                idx = int(raw) - 1
+                if 0 <= idx < len(choices):
+                    return choices[idx].value
+            except ValueError:
+                pass
+            click.echo(f"  Please enter a number 1-{len(choices)}")
+
+
 # Available TTS voices for the wizard
 TTS_VOICES_EN = [
-    ("en_US-lessac-high",      "Lessac (female, US, high quality) ~109 MB  ⭐ recommended"),
+    ("en_US-lessac-high",      f"Lessac (female, US, high quality) ~109 MB  {STAR} recommended"),
     ("en_US-ryan-high",        "Ryan (male, US, high quality) ~115 MB"),
     ("en_GB-cori-high",        "Cori (female, GB, high quality) ~109 MB"),
     ("en_US-ljspeech-high",    "LJSpeech (female, US, high quality) ~109 MB"),
     ("en_US-hfc_female-medium","HFC Female (US, medium) ~60 MB"),
     ("en_US-hfc_male-medium",  "HFC Male (US, medium) ~60 MB"),
     ("en_GB-jenny_dioco-medium","Jenny (female, GB, medium) ~60 MB"),
-    ("en_US-amy-medium",       "Amy (female, US, medium) ~60 MB  — current default"),
+    ("en_US-amy-medium",       "Amy (female, US, medium) ~60 MB  - current default"),
 ]
 
 WAKE_WORD_OPTIONS = [
-    ("octo_v0.1",        "Hi Octo         ⭐ recommended"),
+    ("octo_v0.1",        f"Hi Octo         {STAR} recommended"),
     ("hey_jarvis_v0.1",  "Hey Jarvis      (built-in)"),
     ("alexa_v0.1",       "Alexa           (built-in)"),
     ("hey_mycroft_v0.1", "Hey Mycroft     (built-in)"),
 ]
 
 SILERO_SPEAKERS_RU = [
-    ("xenia",   "Xenia    (female)  ⭐ recommended"),
+    ("xenia",   f"Xenia    (female)  {STAR} recommended"),
     ("baya",    "Baya     (female)"),
     ("kseniya", "Kseniya  (female)"),
     ("eugene",  "Eugene   (male)"),
@@ -118,11 +152,11 @@ QUICK_DEFAULTS = {
 def run_setup(from_step: int = 1) -> None:
     """Run the interactive setup wizard, optionally starting from a specific step."""
     click.echo()
-    click.secho("🐙 Welcome to OpenOcto!", fg="cyan", bold=True)
+    click.secho(f"{OCTOPUS} Welcome to OpenOcto!", fg="cyan", bold=True)
     click.secho("   Your personal AI voice assistant.\n", fg="cyan")
 
     if from_step > 1:
-        click.secho(f"   ⏩ Starting from step {from_step}/8\n", fg="yellow")
+        click.secho(f"   >> Starting from step {from_step}/8\n", fg="yellow")
         return _run_custom_setup(from_step)
 
     # First-time setup: offer quick vs custom
@@ -131,21 +165,19 @@ def run_setup(from_step: int = 1) -> None:
 
     click.secho("  How would you like to set up?", bold=True)
     click.echo()
-    click.echo(f"  ⚡ Quick — recommended settings, wake word \"Hi Octo\",")
+    click.echo(f"  {BOLT} Quick — recommended settings, wake word \"Hi Octo\",")
     click.echo(f"     {lang_label} language, just choose AI backend")
-    click.echo(f"  🔧 Custom — configure each step manually")
+    click.echo(f"  {WRENCH} Custom — configure each step manually")
     click.echo()
 
-    setup_mode = questionary.select(
+    setup_mode = _select(
         "  Setup mode:",
         choices=[
-            questionary.Choice(title="⚡ Quick setup (recommended)", value="quick"),
-            questionary.Choice(title="🔧 Custom setup", value="custom"),
+            questionary.Choice(title=f"{BOLT} Quick setup (recommended)", value="quick"),
+            questionary.Choice(title=f"{WRENCH} Custom setup", value="custom"),
         ],
         default="quick",
-    ).ask()
-    if setup_mode is None:
-        raise SystemExit("Cancelled.")
+    )
     click.echo()
 
     if setup_mode == "quick":
@@ -175,21 +207,23 @@ def _run_quick_setup(primary_lang: str) -> None:
     rms_threshold = 300
 
     click.secho("  Recommended settings:", bold=True)
-    click.echo(f"  ✅ Language: {primary_lang}")
-    click.echo(f"  ✅ STT: whisper-{model_size}")
-    click.echo(f"  ✅ Voice EN: {voice_en}")
-    click.echo(f"  ✅ Voice RU: {voice_ru} (Silero)")
-    click.echo(f"  ✅ Audio: system default")
-    click.echo(f"  ✅ Wake word: Hi Octo")
+    click.echo(f"  {CHECK} Language: {primary_lang}")
+    click.echo(f"  {CHECK} STT: whisper-{model_size}")
+    click.echo(f"  {CHECK} Voice EN: {voice_en}")
+    click.echo(f"  {CHECK} Voice RU: {voice_ru} (Silero)")
+    click.echo(f"  {CHECK} Audio: system default")
+    click.echo(f"  {CHECK} Wake word: Hi Octo")
     click.echo()
 
-    # Ensure openwakeword is installed
+    # Ensure openwakeword is installed (may pip install)
     _ensure_openwakeword()
 
     # Write config
+    spinner = Spinner("Saving configuration...").start()
     _write_config(backend, api_key, model_size, voice_en, voice_ru, primary_lang,
                   input_device, output_device, wakeword_enabled, wakeword_model,
                   mic_gain, vad_threshold, rms_threshold)
+    spinner.stop(f"  {CHECK} Config saved")
 
     # Download models
     _step_download_models(model_size, voice_en, voice_ru, primary_lang,
@@ -207,7 +241,7 @@ def _run_custom_setup(from_step: int = 1) -> None:
     if from_step <= 1:
         user_name = _step_create_user()
     else:
-        click.secho("  ⏩ [1/8] User: (already created)", fg="yellow")
+        click.secho("  >> [1/8] User: (already created)", fg="yellow")
 
     # Step 2: AI backend
     if from_step <= 2:
@@ -215,14 +249,14 @@ def _run_custom_setup(from_step: int = 1) -> None:
     else:
         backend = existing.get("ai", {}).get("default_backend", "claude")
         api_key = ""
-        click.secho(f"  ⏩ [2/8] AI: {backend}", fg="yellow")
+        click.secho(f"  >> [2/8] AI: {backend}", fg="yellow")
 
     # Step 3: Whisper model size
     if from_step <= 3:
         model_size = _step_whisper_model()
     else:
         model_size = existing.get("stt", {}).get("model_size", "small")
-        click.secho(f"  ⏩ [3/8] STT: whisper-{model_size}", fg="yellow")
+        click.secho(f"  >> [3/8] STT: whisper-{model_size}", fg="yellow")
 
     # Step 4: TTS voices
     if from_step <= 4:
@@ -232,7 +266,7 @@ def _run_custom_setup(from_step: int = 1) -> None:
         tts = existing.get("tts", {})
         voice_en = tts.get("models", {}).get("en", TTS_VOICES_EN[0][0])
         voice_ru = tts.get("models", {}).get("ru", SILERO_SPEAKERS_RU[0][0])
-        click.secho(f"  ⏩ [4/8] Voice: lang={primary_lang}, en={voice_en}, ru={voice_ru}", fg="yellow")  # noqa: E501
+        click.secho(f"  >> [4/8] Voice: lang={primary_lang}, en={voice_en}, ru={voice_ru}", fg="yellow")  # noqa: E501
 
     # Step 5: Audio devices
     if from_step <= 5:
@@ -241,7 +275,7 @@ def _run_custom_setup(from_step: int = 1) -> None:
         audio = existing.get("audio", {})
         input_device = audio.get("input_device")
         output_device = audio.get("output_device")
-        click.secho(f"  ⏩ [5/8] Audio: in={input_device}, out={output_device}", fg="yellow")
+        click.secho(f"  >> [5/8] Audio: in={input_device}, out={output_device}", fg="yellow")
 
     # Step 6: Microphone calibration
     if from_step <= 6:
@@ -251,7 +285,7 @@ def _run_custom_setup(from_step: int = 1) -> None:
         mic_gain = vad.get("mic_gain")
         vad_threshold = vad.get("threshold", 0.3)
         rms_threshold = vad.get("rms_speech_threshold", 300)
-        click.secho(f"  ⏩ [6/8] Mic gain: {mic_gain or 'auto'}, RMS threshold: {rms_threshold}", fg="yellow")
+        click.secho(f"  >> [6/8] Mic gain: {mic_gain or 'auto'}, RMS threshold: {rms_threshold}", fg="yellow")
 
     # Step 7: Wake word
     if from_step <= 7:
@@ -260,7 +294,7 @@ def _run_custom_setup(from_step: int = 1) -> None:
         ww = existing.get("wakeword", {})
         wakeword_enabled = ww.get("enabled", False)
         wakeword_model = ww.get("model", "")
-        click.secho(f"  ⏩ [7/8] Wake word: enabled={wakeword_enabled}, model={wakeword_model}", fg="yellow")
+        click.secho(f"  >> [7/8] Wake word: enabled={wakeword_enabled}, model={wakeword_model}", fg="yellow")
 
     click.echo()
 
@@ -279,7 +313,7 @@ def _run_custom_setup(from_step: int = 1) -> None:
 def _finish() -> None:
     """Show completion message and offer to launch."""
     click.echo()
-    click.secho("🎉 Setup complete!", fg="green", bold=True)
+    click.secho(f"{CHECK} Setup complete!", fg="green", bold=True)
     click.echo()
 
     click.echo("  To start later, run:")
@@ -307,7 +341,7 @@ def _load_existing_config() -> dict:
 
 def _step_create_user() -> str:
     """Step 1: Create the default user in HistoryStore."""
-    click.secho("👤 [1/8] Who are you?", bold=True)
+    click.secho(f"{USER} [1/8] Who are you?", bold=True)
     click.echo()
 
     import getpass
@@ -319,10 +353,10 @@ def _step_create_user() -> str:
     store = HistoryStore()
     existing = store.get_user_by_name(name)
     if existing:
-        click.secho(f"  ✅ Welcome back, {name}!", fg="green")
+        click.secho(f"  {CHECK} Welcome back, {name}!", fg="green")
     else:
         store.create_user(name, is_default=True)
-        click.secho(f"  ✅ User \"{name}\" created!", fg="green")
+        click.secho(f"  {CHECK} User \"{name}\" created!", fg="green")
     store.close()
 
     click.echo()
@@ -331,21 +365,18 @@ def _step_create_user() -> str:
 
 def _step_ai_backend() -> tuple[str, str]:
     """Step 2: Choose AI backend and optionally enter API key."""
-    click.secho("🤖 [2/8] AI Brain", bold=True)
+    click.secho(f"{WRENCH} [2/8] AI Brain", bold=True)
     click.echo()
 
     choices = [
         questionary.Choice(title=desc, value=key)
         for key, desc in AI_BACKENDS
-    ] + [questionary.Choice(title="⏭  Skip (configure later)", value="skip")]
+    ] + [questionary.Choice(title=">>  Skip (configure later)", value="skip")]
 
-    backend = questionary.select("  Choose AI backend:", choices=choices, default=choices[0]).ask()
-
-    if backend is None:
-        raise SystemExit("Cancelled.")
+    backend = _select("  Choose AI backend:", choices=choices, default=choices[0].value)
 
     if backend == "skip":
-        click.secho("  ⏭  Skipped. Configure later in ~/.openocto/config.yaml\n", fg="yellow")
+        click.secho("  >>  Skipped. Configure later in ~/.openocto/config.yaml\n", fg="yellow")
         return "claude", ""
     api_key = ""
 
@@ -353,19 +384,19 @@ def _step_ai_backend() -> tuple[str, str]:
     if env_var:
         existing = os.environ.get(env_var, "")
         if existing:
-            click.secho(f"  ✅ {env_var} already set in environment", fg="green")
+            click.secho(f"  {CHECK} {env_var} already set in environment", fg="green")
             api_key = existing
         else:
             api_key = click.prompt(
-                f"  🔑 Enter your API key ({env_var})",
+                f"  {CHECK} Enter your API key ({env_var})",
                 default="",
                 show_default=False,
                 hide_input=True,
             )
             if not api_key:
-                click.secho(f"  ⚠️  Skipped. Set {env_var} before running.\n", fg="yellow")
+                click.secho(f"  {WARN}  Skipped. Set {env_var} before running.\n", fg="yellow")
     elif backend == "claude-proxy":
-        click.secho("  ✅ No API key needed — uses your Claude subscription via local proxy.", fg="green")
+        click.secho(f"  {CHECK} No API key needed — uses your Claude subscription via local proxy.", fg="green")
 
     click.echo()
     return backend, api_key
@@ -373,7 +404,7 @@ def _step_ai_backend() -> tuple[str, str]:
 
 def _step_tts_voices() -> tuple[str, str, str]:
     """Step 3: Choose language and TTS voices. Returns (voice_en, voice_ru, primary_lang)."""
-    click.secho("🗣️  [4/8] Voice & Language", bold=True)
+    click.secho(f"{MIC}  [4/8] Voice & Language", bold=True)
     click.echo()
 
     # Detect system locale for smart default
@@ -385,14 +416,12 @@ def _step_tts_voices() -> tuple[str, str, str]:
         default_lang = 1
 
     lang_choices = [
-        questionary.Choice(title="🇺🇸  English", value="en"),
-        questionary.Choice(title="🇷🇺  Russian", value="ru"),
-        questionary.Choice(title="🌐  Both (bilingual — auto-detect)", value="auto"),
+        questionary.Choice(title=f"{FLAG_US}  English", value="en"),
+        questionary.Choice(title=f"{FLAG_RU}  Russian", value="ru"),
+        questionary.Choice(title=f"{GLOBE}  Both (bilingual — auto-detect)", value="auto"),
     ]
     default_val = "ru" if default_lang == 2 else "en"
-    primary_lang = questionary.select("  🌍 Primary language:", choices=lang_choices, default=default_val).ask()
-    if primary_lang is None:
-        raise SystemExit("Cancelled.")
+    primary_lang = _select(f"  {GLOBE} Primary language:", choices=lang_choices, default=default_val)
     click.echo()
 
     # Defaults
@@ -401,16 +430,12 @@ def _step_tts_voices() -> tuple[str, str, str]:
 
     if primary_lang in ("en", "auto"):
         en_choices = [questionary.Choice(title=desc, value=key) for key, desc in TTS_VOICES_EN]
-        voice_en = questionary.select("  🔊 English voice:", choices=en_choices, default=en_choices[0]).ask()
-        if voice_en is None:
-            raise SystemExit("Cancelled.")
+        voice_en = _select(f"  {MIC} English voice:", choices=en_choices, default=en_choices[0].value)
         click.echo()
 
     if primary_lang in ("ru", "auto"):
         ru_choices = [questionary.Choice(title=desc, value=key) for key, desc in SILERO_SPEAKERS_RU]
-        voice_ru = questionary.select("  🔊 Russian voice (Silero TTS):", choices=ru_choices, default=ru_choices[0]).ask()
-        if voice_ru is None:
-            raise SystemExit("Cancelled.")
+        voice_ru = _select(f"  {MIC} Russian voice (Silero TTS):", choices=ru_choices, default=ru_choices[0].value)
         click.echo()
 
     return voice_en, voice_ru, primary_lang
@@ -418,7 +443,7 @@ def _step_tts_voices() -> tuple[str, str, str]:
 
 def _step_audio_devices() -> tuple[str | None, str | None]:
     """Step 4: Choose microphone and output device."""
-    click.secho("🔊 [5/8] Audio Devices", bold=True)
+    click.secho(f"{MIC} [5/8] Audio Devices", bold=True)
     click.echo()
 
     import sounddevice as sd
@@ -445,10 +470,8 @@ def _step_audio_devices() -> tuple[str | None, str | None]:
         questionary.Choice(title=_device_label(i, d), value=d["name"])
         for i, d in inputs
     ]
-    input_device = questionary.select("  🎤 Microphone (input):", choices=mic_choices, default=mic_choices[0]).ask()
-    if input_device is questionary.Choice:
-        raise SystemExit("Cancelled.")
-    click.secho(f"  ✅ Microphone: {input_device or 'system default'}", fg="green")
+    input_device = _select(f"  {MIC} Microphone (input):", choices=mic_choices, default=mic_choices[0].value)
+    click.secho(f"  {CHECK} Microphone: {input_device or 'system default'}", fg="green")
     click.echo()
 
     # --- Speaker ---
@@ -456,13 +479,13 @@ def _step_audio_devices() -> tuple[str | None, str | None]:
         questionary.Choice(title=_device_label(i, d), value=d["name"])
         for i, d in outputs
     ]
-    output_device = questionary.select("  🔈 Speaker (output):", choices=spk_choices, default=spk_choices[0]).ask()
-    click.secho(f"  ✅ Speaker: {output_device or 'system default'}", fg="green")
+    output_device = _select(f"  {MIC} Speaker (output):", choices=spk_choices, default=spk_choices[0].value)
+    click.secho(f"  {CHECK} Speaker: {output_device or 'system default'}", fg="green")
     click.echo()
 
     if input_device is not None or output_device is not None:
         click.secho(
-            "  💡 Tip: if using a Bluetooth speaker for output — choose the\n"
+            f"  {BULB} Tip: if using a Bluetooth speaker for output — choose the\n"
             "     built-in microphone for input to preserve A2DP audio quality.",
             fg="cyan",
         )
@@ -476,6 +499,13 @@ def _record_chunk(input_device, duration: float, sample_rate: int = 16000) -> "n
     import numpy as np
     import sounddevice as sd
 
+    # On Windows, None/"System default" can fail — resolve to default device index
+    if input_device is None or input_device == "System default":
+        try:
+            input_device = sd.default.device[0]  # default input device index
+        except Exception:
+            input_device = None
+
     # Use device native sample rate to avoid PortAudio errors
     try:
         info = sd.query_devices(input_device, "input")
@@ -486,7 +516,7 @@ def _record_chunk(input_device, duration: float, sample_rate: int = 16000) -> "n
         max_ch = 1
 
     if max_ch == 0:
-        click.secho("  ⚠️  Selected device has no input channels.", fg="yellow")
+        click.secho(f"  {WARN}  Selected device has no input channels.", fg="yellow")
         return None
 
     channels = min(1, max_ch)
@@ -500,7 +530,7 @@ def _record_chunk(input_device, duration: float, sample_rate: int = 16000) -> "n
         )
         sd.wait()
     except Exception as e:
-        click.secho(f"  ⚠️  Recording error: {e}", fg="yellow")
+        click.secho(f"  {WARN}  Recording error: {e}", fg="yellow")
         return None
 
     audio = audio.flatten()
@@ -522,13 +552,13 @@ def _step_mic_calibration(input_device: int | str | None) -> tuple[float | None,
     Returns (mic_gain, vad_threshold, rms_speech_threshold).
     mic_gain=None means auto-gain is sufficient.
     """
-    click.secho("🔬 [6/8] Microphone Calibration", bold=True)
+    click.secho(f"{WRENCH} [6/8] Microphone Calibration", bold=True)
     click.echo()
     click.echo("  Records silence and speech to calibrate VAD sensitivity.")
     click.echo()
 
     if not click.confirm("  Start calibration?", default=True):
-        click.secho("  ⏭  Skipped. Defaults will be used.\n", fg="yellow")
+        click.secho("  >>  Skipped. Defaults will be used.\n", fg="yellow")
         return None, 0.5, 300
 
     import numpy as np
@@ -562,34 +592,34 @@ def _step_mic_calibration(input_device: int | str | None) -> tuple[float | None,
 
     # --- Phase 1: silence ---
     click.echo()
-    click.secho("  🔇 Phase 1/2 — stay quiet... (2 seconds)", fg="yellow", bold=True)
+    click.secho(f"  {MUTE} Phase 1/2 — stay quiet... (2 seconds)", fg="yellow", bold=True)
     silence_audio = _record_chunk(input_device, duration=2.0)
 
     if silence_audio is None or int(np.abs(silence_audio).max()) < 10:
-        click.secho("  ⚠️  No audio detected. Check microphone.\n", fg="yellow")
+        click.secho(f"  {WARN}  No audio detected. Check microphone.\n", fg="yellow")
         return None, 0.5, 300
 
     # --- Phase 2: speech ---
     click.echo()
-    click.secho("  🎤 Phase 2/2 — get ready to speak!", fg="cyan", bold=True)
+    click.secho(f"  {MIC} Phase 2/2 — get ready to speak!", fg="cyan", bold=True)
     for i in range(3, 0, -1):
         click.echo(f"     {i}...", nl=False)
         import time; time.sleep(1)
     click.echo()
-    click.secho("  🔴 Recording — speak now! (3 seconds)", fg="red", bold=True)
+    click.secho(f"  {REC} Recording — speak now! (3 seconds)", fg="red", bold=True)
     speech_audio = _record_chunk(input_device, duration=3.0)
 
     if speech_audio is None:
-        click.secho("  ⚠️  Recording failed.\n", fg="yellow")
+        click.secho(f"  {WARN}  Recording failed.\n", fg="yellow")
         return None, 0.5, 300
 
     # --- Compute gain ---
     speech_peak = int(np.abs(speech_audio).max())
     click.echo()
-    click.echo(f"  📊 Speech peak: {speech_peak} / 32767")
+    click.echo(f"  {CHECK} Speech peak: {speech_peak} / 32767")
 
     if speech_peak < 50:
-        click.secho("  ⚠️  Speech too quiet. Check microphone volume.\n", fg="yellow")
+        click.secho(f"  {WARN}  Speech too quiet. Check microphone volume.\n", fg="yellow")
         return None, 0.5, 300
 
     target_peak = 16384  # 0.5 in float32
@@ -598,9 +628,11 @@ def _step_mic_calibration(input_device: int | str | None) -> tuple[float | None,
     mic_gain: float | None = None if gain < 1.5 else gain
 
     # --- Compute VAD threshold ---
+    # Silero VAD is unreliable on some platforms (e.g. ARM64 onnxruntime),
+    # so we also calibrate a raw RMS threshold as a fallback.
     vad_threshold = 0.3  # safe default
     if vad_available:
-        def apply_gain(a: np.ndarray) -> np.ndarray:
+        def apply_gain_f32(a: np.ndarray) -> np.ndarray:
             f = a.astype(np.float32) / 32768.0
             if mic_gain is not None:
                 return np.clip(f * mic_gain, -1.0, 1.0)
@@ -609,8 +641,8 @@ def _step_mic_calibration(input_device: int | str | None) -> tuple[float | None,
                 return np.clip(f * (0.5 / peak), -1.0, 1.0)
             return f
 
-        silence_gained = (apply_gain(silence_audio) * 32768).astype(np.int16)
-        speech_gained = (apply_gain(speech_audio) * 32768).astype(np.int16)
+        silence_gained = (apply_gain_f32(silence_audio) * 32768).astype(np.int16)
+        speech_gained = (apply_gain_f32(speech_audio) * 32768).astype(np.int16)
 
         silence_probs = vad_probs(silence_gained)
         speech_probs = vad_probs(speech_gained)
@@ -618,30 +650,37 @@ def _step_mic_calibration(input_device: int | str | None) -> tuple[float | None,
         noise_max = max(silence_probs) if silence_probs else 0.0
         speech_max = max(speech_probs) if speech_probs else 0.0
 
-        click.echo(f"  📊 VAD silence max: {noise_max:.3f}  |  speech max: {speech_max:.3f}")
+        click.echo(f"  {CHECK} VAD silence max: {noise_max:.3f}  |  speech max: {speech_max:.3f}")
 
         if speech_max < 0.2:
-            click.secho("  ⚠️  VAD couldn't detect speech. Using default threshold 0.3.", fg="yellow")
+            click.secho(f"  {WARN}  Silero VAD couldn't detect speech — RMS fallback will be used.", fg="yellow")
         else:
-            # Threshold = midpoint between noise ceiling and speech floor
             speech_min = float(np.percentile(speech_probs, 25))
             threshold = round((noise_max + speech_min) / 2, 2)
             threshold = max(0.1, min(threshold, 0.7))
             vad_threshold = threshold
-            click.secho(f"  ✅ VAD threshold set to {vad_threshold}", fg="green")
+            click.secho(f"  {CHECK} VAD threshold set to {vad_threshold}", fg="green")
 
-    # --- Compute RMS speech threshold ---
+    # --- Compute RMS speech threshold on RAW signal (before gain) ---
+    # This is critical: VAD uses raw RMS as fallback, so the threshold
+    # must match raw signal levels, not gained levels.
     silence_rms = float(np.sqrt(np.mean(silence_audio.astype(np.float32) ** 2)))
     speech_rms = float(np.sqrt(np.mean(speech_audio.astype(np.float32) ** 2)))
-    # Midpoint between silence and speech, with a margin above silence
-    rms_threshold = int(silence_rms + (speech_rms - silence_rms) * 0.4)
-    rms_threshold = max(100, min(rms_threshold, 2000))
-    click.echo(f"  📊 RMS silence: {silence_rms:.0f}  |  speech: {speech_rms:.0f}  |  threshold: {rms_threshold}")
+
+    if speech_rms > silence_rms * 1.5:
+        # Good separation — threshold at 60% between silence and speech
+        rms_threshold = int(silence_rms + (speech_rms - silence_rms) * 0.6)
+    else:
+        # Poor separation (noisy VM, bad mic) — use 2x silence RMS
+        rms_threshold = int(silence_rms * 2.0)
+    rms_threshold = max(50, min(rms_threshold, 5000))
+
+    click.echo(f"  {CHECK} RMS (raw) silence: {silence_rms:.0f}  |  speech: {speech_rms:.0f}  |  threshold: {rms_threshold}")
 
     if mic_gain is None:
-        click.secho("  ✅ Microphone level is good. Auto-gain enabled.", fg="green")
+        click.secho(f"  {CHECK} Microphone level is good. Auto-gain enabled.", fg="green")
     else:
-        click.secho(f"  ✅ Mic gain: x{mic_gain}", fg="green")
+        click.secho(f"  {CHECK} Mic gain: x{mic_gain}", fg="green")
 
     click.echo()
     return mic_gain, vad_threshold, rms_threshold
@@ -649,21 +688,19 @@ def _step_mic_calibration(input_device: int | str | None) -> tuple[float | None,
 
 def _step_wakeword() -> tuple[bool, str]:
     """Step 4: Choose wake word."""
-    click.secho("🎙️  [7/8] Wake Word", bold=True)
+    click.secho(f"{MIC2}  [7/8] Wake Word", bold=True)
     click.echo()
     click.echo("  The assistant listens in the background and responds to a trigger phrase.")
     click.echo("  Without wake word — hold Space to record (push-to-talk).")
     click.echo()
 
     if not click.confirm("  Enable wake word mode?", default=True):
-        click.secho("  ⏭  Push-to-talk mode. Hold [Space] to record.\n", fg="yellow")
+        click.secho("  >>  Push-to-talk mode. Hold [Space] to record.\n", fg="yellow")
         return False, ""
 
     click.echo()
     ww_choices = [questionary.Choice(title=desc, value=key) for key, desc in WAKE_WORD_OPTIONS]
-    wakeword_model = questionary.select("  Trigger phrase:", choices=ww_choices, default=ww_choices[0]).ask()
-    if wakeword_model is None:
-        raise SystemExit("Cancelled.")
+    wakeword_model = _select("  Trigger phrase:", choices=ww_choices, default=ww_choices[0].value)
     click.echo()
 
     _ensure_openwakeword()
@@ -672,14 +709,16 @@ def _step_wakeword() -> tuple[bool, str]:
 
 def _ensure_openwakeword() -> None:
     """Check openwakeword is installed; offer to install if missing."""
+    spinner = Spinner("Checking wake word support...").start()
     try:
         import openwakeword  # noqa: F401
+        spinner.stop(f"  {CHECK} Wake word support ready")
         return
     except ImportError:
-        pass
+        spinner.stop()
 
     click.echo()
-    click.secho("  ⚠️  Wake word requires the openwakeword package (~50 MB).", fg="yellow")
+    click.secho(f"  {WARN}  Wake word requires the openwakeword package (~50 MB).", fg="yellow")
     click.echo()
 
     if not click.confirm("  Install now?", default=True):
@@ -699,10 +738,10 @@ def _ensure_openwakeword() -> None:
     )
     spinner.stop()
     if result.returncode == 0:
-        click.secho("  ✅ openwakeword installed!", fg="green")
+        click.secho(f"  {CHECK} openwakeword installed!", fg="green")
     else:
         click.secho(
-            "  ⚠️  Installation failed. Try manually:\n"
+            f"  {WARN}  Installation failed. Try manually:\n"
             "    pip install openocto[wakeword]",
             fg="yellow",
         )
@@ -710,23 +749,21 @@ def _ensure_openwakeword() -> None:
 
 def _step_whisper_model() -> str:
     """Step 2: Choose Whisper model size."""
-    click.secho("🎤 [3/8] Speech Recognition", bold=True)
+    click.secho(f"{MIC} [3/8] Speech Recognition", bold=True)
     click.echo()
 
     models = [
-        ("tiny",   "75 MB",  "⚡ Fastest, lower accuracy"),
-        ("base",   "142 MB", "⚡ Fast, decent accuracy"),
-        ("small",  "466 MB", "⭐ Recommended — great balance"),
-        ("medium", "1.5 GB", "🏆 Best accuracy, slower"),
+        ("tiny",   "75 MB",  f"{BOLT} Fastest, lower accuracy"),
+        ("base",   "142 MB", f"{BOLT} Fast, decent accuracy"),
+        ("small",  "466 MB", f"{STAR} Recommended - great balance"),
+        ("medium", "1.5 GB", f"{STAR} Best accuracy, slower"),
     ]
 
     whisper_choices = [
         questionary.Choice(title=f"{name:8s} [{size:>6s}]  {desc}", value=name)
         for name, size, desc in models
     ]
-    model_size = questionary.select("  Choose model:", choices=whisper_choices, default="small").ask()
-    if model_size is None:
-        raise SystemExit("Cancelled.")
+    model_size = _select("  Choose model:", choices=whisper_choices, default="small")
     click.echo()
     return model_size
 
@@ -737,7 +774,7 @@ def _write_config(backend: str, api_key: str, model_size: str, voice_en: str, vo
                   mic_gain: float | None = None, vad_threshold: float = 0.3,
                   rms_threshold: int = 300) -> None:
     """Step 6: Write user config file."""
-    click.secho("💾 [8/8] Saving configuration", bold=True)
+    click.secho(f"{CHECK} [8/8] Saving configuration", bold=True)
 
     USER_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -788,7 +825,7 @@ def _write_config(backend: str, api_key: str, model_size: str, voice_en: str, vo
     with open(USER_CONFIG_PATH, "w") as f:
         yaml.dump(config, f, default_flow_style=False, allow_unicode=True)
 
-    click.secho(f"  ✅ Config saved to {USER_CONFIG_PATH}", fg="green")
+    click.secho(f"  {CHECK} Config saved to {USER_CONFIG_PATH}", fg="green")
     click.echo()
 
 
@@ -825,7 +862,7 @@ def _ensure_torch(primary_lang: str) -> None:
         pass
 
     click.echo()
-    click.secho("  ⚠️  Silero TTS requires PyTorch (~200 MB, CPU-only).", fg="yellow")
+    click.secho(f"  {WARN}  Silero TTS requires PyTorch (~200 MB, CPU-only).", fg="yellow")
     click.echo("      Without it, Russian voice synthesis will not work.")
     click.echo()
 
@@ -847,10 +884,10 @@ def _ensure_torch(primary_lang: str) -> None:
     )
     spinner.stop()
     if result.returncode == 0:
-        click.secho("  ✅ PyTorch installed!", fg="green")
+        click.secho(f"  {CHECK} PyTorch installed!", fg="green")
     else:
         click.secho(
-            "  ⚠️  Installation failed. Try manually:\n"
+            f"  {WARN}  Installation failed. Try manually:\n"
             "    pip install torch --index-url https://download.pytorch.org/whl/cpu",
             fg="yellow",
         )
@@ -868,37 +905,37 @@ def _step_download_models(model_size: str, voice_en: str, voice_ru: str, primary
     missing = [k for k, exists in status.items() if not exists]
 
     if not missing:
-        click.secho("  ✅ All models already downloaded", fg="green")
+        click.secho(f"  {CHECK} All models already downloaded", fg="green")
         _ensure_torch(primary_lang)
         return
 
     labels = {
         "whisper": f"Whisper ({model_size})",
-        "piper_en": f"🇺🇸 English voice ({voice_en})",
-        "silero_ru": "🇷🇺 Russian voice — Silero TTS (~50 MB)",
+        "piper_en": f"{FLAG_US} English voice ({voice_en})",
+        "silero_ru": f"{FLAG_RU} Russian voice — Silero TTS (~50 MB)",
         "vad": "VAD (voice activity detection)",
-        "wakeword": f"🎙️  Wake word model ({wakeword_model})",
+        "wakeword": f"{MIC2}  Wake word model ({wakeword_model})",
     }
 
-    click.secho("📦 Models to download:", bold=True)
+    click.secho(f"{DOWN} Models to download:", bold=True)
     for key, exists in status.items():
-        click.echo(f"  {'✅' if exists else '⬇️ '} {labels[key]}")
+        click.echo(f"  {f'{CHECK}' if exists else f'{DOWN} '} {labels[key]}")
     click.echo()
 
     if not click.confirm("  Download missing models now?", default=True):
-        click.secho("  ⚠️  Models will download automatically on first run.", fg="yellow")
+        click.secho(f"  {WARN}  Models will download automatically on first run.", fg="yellow")
         _ensure_torch(primary_lang)
         return
 
     click.echo()
 
     def _download(label: str, func, *args):
-        spinner = Spinner(f"Downloading {label}...").start()
+        click.echo(f"  {DOWN}  {label}...")
         try:
             func(*args)
-            spinner.stop(f"  ✅ {label}")
+            click.secho(f"  {CHECK} {label}", fg="green")
         except Exception:
-            spinner.stop(f"  ⚠️  Failed to download {label}")
+            click.secho(f"  {WARN}  Failed to download {label}", fg="yellow")
             raise
 
     try:
@@ -919,10 +956,10 @@ def _step_download_models(model_size: str, voice_en: str, voice_ru: str, primary
             if not info.get("builtin", False):
                 _download(f"Wake word model ({wakeword_model})", get_wake_word_model, wakeword_model)
 
-        click.secho("  ✅ All models ready!", fg="green")
+        click.secho(f"  {CHECK} All models ready!", fg="green")
 
     except Exception as e:
-        click.secho(f"  ⚠️  Model download failed: {e}", fg="yellow")
+        click.secho(f"  {WARN}  Model download failed: {e}", fg="yellow")
         click.secho("  Models will download automatically on first run.", fg="yellow")
 
     _ensure_torch(primary_lang)
