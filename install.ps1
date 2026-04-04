@@ -152,11 +152,11 @@ if (-not (Test-Path ".venv")) {
 # 4. Install
 Write-Info "Installing dependencies..."
 & .venv\Scripts\python.exe -m pip install --quiet --upgrade pip
-& .venv\Scripts\pip install --quiet -e .
+& .venv\Scripts\pip install --quiet -e ".[web]"
 if ($LASTEXITCODE -ne 0) {
     Write-Fail "Failed to install dependencies. Check the errors above."
 }
-Write-Ok "Installed"
+Write-Ok "Installed (with web admin)"
 
 # 4b. Try to install audio extras (pywhispercpp, piper-tts)
 # On ARM64 Windows we download prebuilt wheels from GitHub Releases.
@@ -321,6 +321,14 @@ if (Get-Command npm -ErrorAction SilentlyContinue) {
 
 # 10. Run setup wizard
 Write-Host ""
-Write-Info "Starting setup wizard..."
-Write-Host ""
-& openocto setup
+$wizardMode = Read-Host "Run setup wizard in [B]rowser or [C]LI? [B/c]"
+if ($wizardMode -match '^[Cc]$') {
+    Write-Info "Starting CLI setup wizard..."
+    Write-Host ""
+    & openocto setup
+} else {
+    Write-Info "Starting web setup wizard..."
+    Write-Host ""
+    Start-Process "http://localhost:8080/wizard"
+    & openocto web
+}

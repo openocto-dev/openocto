@@ -173,8 +173,8 @@ fi
 # 4. Install
 info "Installing dependencies..."
 .venv/bin/pip install --quiet --upgrade pip
-.venv/bin/pip install --quiet -e .
-ok "Installed"
+.venv/bin/pip install --quiet -e ".[web]"
+ok "Installed (with web admin)"
 
 # 5. Verify
 VERSION=$(.venv/bin/openocto --version 2>&1 | tail -1)
@@ -287,6 +287,22 @@ fi
 
 # 11. Run setup wizard
 echo ""
-info "Starting setup wizard..."
-echo ""
-openocto setup
+read -r -p "$(echo -e "${CYAN}Run setup wizard in [B]rowser or [C]LI? [B/c]: ${NC}")" WIZARD_MODE </dev/tty
+if [[ "$WIZARD_MODE" =~ ^[Cc]$ ]]; then
+    info "Starting CLI setup wizard..."
+    echo ""
+    openocto setup
+else
+    info "Starting web setup wizard..."
+    # Open browser automatically
+    if command -v xdg-open &>/dev/null; then
+        (sleep 1 && xdg-open "http://localhost:8080/wizard" 2>/dev/null) &
+    elif command -v open &>/dev/null; then
+        (sleep 1 && open "http://localhost:8080/wizard" 2>/dev/null) &
+    else
+        echo ""
+        echo -e "  ${GREEN}Open your browser at: ${BOLD}http://localhost:8080/wizard${NC}"
+    fi
+    echo ""
+    openocto web
+fi

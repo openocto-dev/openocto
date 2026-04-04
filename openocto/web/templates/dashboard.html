@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — OpenOcto{% endblock %}
+
+{% block content %}
+<h2>Dashboard</h2>
+
+<div class="card-grid">
+    <article>
+        <header>Pipeline State</header>
+        <p>
+            <span id="state-badge" class="state-badge state-{{ state }}">{{ state }}</span>
+        </p>
+    </article>
+
+    <article>
+        <header>Active User</header>
+        <p>{{ user_name }}</p>
+    </article>
+
+    <article>
+        <header>Persona</header>
+        <p>{{ persona_name }}</p>
+    </article>
+
+    <article>
+        <header>AI Backend</header>
+        <p>{{ backend }}</p>
+    </article>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+    const ws = new WebSocket("ws://" + location.host + "/ws");
+    const badge = document.getElementById("state-badge");
+
+    ws.onmessage = function(event) {
+        const msg = JSON.parse(event.data);
+        if (msg.type === "state.changed" || msg.type === "state") {
+            const state = msg.data.state || msg.data.to;
+            if (state && badge) {
+                badge.textContent = state;
+                badge.className = "state-badge state-" + state;
+            }
+        }
+    };
+
+    ws.onclose = function() {
+        if (badge) {
+            badge.textContent = "disconnected";
+            badge.className = "state-badge";
+        }
+    };
+})();
+</script>
+{% endblock %}

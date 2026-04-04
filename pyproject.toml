@@ -33,6 +33,11 @@ audio = [
     "pywhispercpp>=1.2.0",
     "piper-tts>=1.2.0",
 ]
+web = [
+    "aiohttp>=3.9",
+    "aiohttp-jinja2>=1.6",
+    "jinja2>=3.1",
+]
 dev = [
     "pytest>=7.0",
     "pytest-asyncio>=0.21",

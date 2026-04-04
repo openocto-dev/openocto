@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}OpenOcto{% endblock %}</title>
+    <link rel="stylesheet" href="/static/pico.min.css">
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="/static/htmx.min.js"></script>
+</head>
+<body>
+    {% block nav %}
+    <nav class="container">
+        <ul>
+            <li><strong><a href="/">&#x1f419; OpenOcto</a></strong></li>
+        </ul>
+        <ul>
+            <li><a href="/" {% if page == 'dashboard' %}aria-current="page"{% endif %}>Dashboard</a></li>
+            <li><a href="/users" {% if page == 'users' %}aria-current="page"{% endif %}>Users</a></li>
+            <li><a href="/messages" {% if page == 'messages' %}aria-current="page"{% endif %}>Messages</a></li>
+            <li><a href="/config" {% if page == 'config' %}aria-current="page"{% endif %}>Config</a></li>
+            <li><a href="/personas" {% if page == 'personas' %}aria-current="page"{% endif %}>Personas</a></li>
+            <li><a href="/memory" {% if page == 'memory' %}aria-current="page"{% endif %}>Memory</a></li>
+        </ul>
+    </nav>
+    {% endblock %}
+
+    <main class="container">
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="container">
+        <small>OpenOcto v{{ version }} &mdash; <a href="/wizard">Setup Wizard</a></small>
+    </footer>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,302 @@
+{% extends "base.html" %}
+{% block title %}Setup Wizard — OpenOcto{% endblock %}
+
+{% block nav %}
+<nav class="container">
+    <ul>
+        <li><strong>&#x1f419; OpenOcto Setup</strong></li>
+    </ul>
+</nav>
+{% endblock %}
+
+{% block content %}
+<article>
+    <div class="wizard-progress" id="progress">
+        {% for i in range(total_steps) %}
+        <div class="step {% if i == 0 %}active{% endif %}" data-step="{{ i + 1 }}"></div>
+        {% endfor %}
+    </div>
+
+    <div id="wizard-container">
+        <!-- Step 1: Welcome + User -->
+        <div class="wizard-step" data-step="1">
+            <h3>&#x1f44b; Welcome to OpenOcto</h3>
+            <p>Let's set up your voice assistant. This will only take a minute.</p>
+
+            <label for="user_name">Your name</label>
+            <input type="text" id="user_name" name="user_name" value="{{ default_user_name }}" required>
+
+            <div class="wizard-nav">
+                <span></span>
+                <button type="button" onclick="nextStep(2)">Next &rarr;</button>
+            </div>
+        </div>
+
+        <!-- Step 2: AI Backend -->
+        <div class="wizard-step" data-step="2" hidden>
+            <h3>&#x1f9e0; AI Backend</h3>
+            <p>Choose how OpenOcto will think.</p>
+
+            <label for="backend">Backend</label>
+            <select id="backend" name="backend" onchange="onBackendChange()">
+                {% for key, desc in ai_backends %}
+                <option value="{{ key }}">{{ desc }}</option>
+                {% endfor %}
+            </select>
+
+            <div id="api-key-group" style="display:none;">
+                <label for="api_key">API Key</label>
+                <input type="password" id="api_key" name="api_key" placeholder="Enter your API key">
+            </div>
+
+            <div id="ollama-group" style="display:none;">
+                <label for="ollama_model">Ollama Model</label>
+                <select id="ollama_model" name="ollama_model">
+                    <option value="">Loading...</option>
+                </select>
+                <small>
+                    <a href="#" onclick="loadOllamaModels(); return false;">Refresh models</a>
+                </small>
+            </div>
+
+            <div class="wizard-nav">
+                <button type="button" class="secondary" onclick="prevStep(1)">&larr; Back</button>
+                <button type="button" onclick="nextStep(3)">Next &rarr;</button>
+            </div>
+        </div>
+
+        <!-- Step 3: Language + Voices -->
+        <div class="wizard-step" data-step="3" hidden>
+            <h3>&#x1f3a4; Language &amp; Voice</h3>
+
+            <label for="primary_lang">Primary language</label>
+            <select id="primary_lang" name="primary_lang">
+                <option value="en" {% if primary_lang == 'en' %}selected{% endif %}>English</option>
+                <option value="ru" {% if primary_lang == 'ru' %}selected{% endif %}>Russian</option>
+                <option value="auto">Auto-detect</option>
+            </select>
+
+            <label for="voice_en">English voice (Piper TTS)</label>
+            <select id="voice_en" name="voice_en">
+                {% for key, desc in tts_voices_en %}
+                <option value="{{ key }}" {% if loop.first %}selected{% endif %}>{{ desc }}</option>
+                {% endfor %}
+            </select>
+
+            <label for="voice_ru">Russian voice (Silero TTS)</label>
+            <select id="voice_ru" name="voice_ru">
+                {% for key, desc in silero_speakers_ru %}
+                <option value="{{ key }}" {% if loop.first %}selected{% endif %}>{{ desc }}</option>
+                {% endfor %}
+            </select>
+
+            <div class="wizard-nav">
+                <button type="button" class="secondary" onclick="prevStep(2)">&larr; Back</button>
+                <button type="button" onclick="nextStep(4)">Next &rarr;</button>
+            </div>
+        </div>
+
+        <!-- Step 4: STT Model -->
+        <div class="wizard-step" data-step="4" hidden>
+            <h3>&#x1f50a; Speech Recognition</h3>
+            <p>Larger models are more accurate but slower and use more memory.</p>
+
+            <label for="model_size">Whisper model size</label>
+            <select id="model_size" name="model_size">
+                {% for key, desc in whisper_model_sizes %}
+                <option value="{{ key }}" {% if key == 'small' %}selected{% endif %}>{{ desc }}</option>
+                {% endfor %}
+            </select>
+
+            <div class="wizard-nav">
+                <button type="button" class="secondary" onclick="prevStep(3)">&larr; Back</button>
+                <button type="button" onclick="nextStep(5)">Next &rarr;</button>
+            </div>
+        </div>
+
+        <!-- Step 5: Wake Word -->
+        <div class="wizard-step" data-step="5" hidden>
+            <h3>&#x1f3af; Wake Word</h3>
+            <p>Enable hands-free activation with a wake word, or use push-to-talk.</p>
+
+            <fieldset>
+                <label>
+                    <input type="checkbox" id="wakeword_enabled" name="wakeword_enabled" checked>
+                    Enable wake word detection
+                </label>
+            </fieldset>
+
+            <label for="wakeword_model">Wake word</label>
+            <select id="wakeword_model" name="wakeword_model">
+                {% for key, desc in wake_word_options %}
+                <option value="{{ key }}" {% if loop.first %}selected{% endif %}>{{ desc }}</option>
+                {% endfor %}
+            </select>
+
+            <div class="wizard-nav">
+                <button type="button" class="secondary" onclick="prevStep(4)">&larr; Back</button>
+                <button type="button" onclick="nextStep(6)">Next &rarr;</button>
+            </div>
+        </div>
+
+        <!-- Step 6: Summary + Save -->
+        <div class="wizard-step" data-step="6" hidden>
+            <h3>&#x2705; Ready to go!</h3>
+            <p>Review your settings and save.</p>
+
+            <table>
+                <tbody id="summary-table">
+                </tbody>
+            </table>
+
+            <div class="wizard-nav">
+                <button type="button" class="secondary" onclick="prevStep(5)">&larr; Back</button>
+                <button type="button" id="save-btn" onclick="saveWizard()">Save &amp; Start</button>
+            </div>
+        </div>
+    </div>
+</article>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const TOTAL_STEPS = {{ total_steps }};
+let currentStep = 1;
+
+function showStep(n) {
+    document.querySelectorAll('.wizard-step').forEach(el => el.hidden = true);
+    const step = document.querySelector('.wizard-step[data-step="' + n + '"]');
+    if (step) step.hidden = false;
+
+    // Update progress bar
+    document.querySelectorAll('.wizard-progress .step').forEach((el, i) => {
+        el.className = 'step' + (i + 1 < n ? ' done' : (i + 1 === n ? ' active' : ''));
+    });
+
+    currentStep = n;
+}
+
+function nextStep(n) {
+    if (n === 6) buildSummary();
+    showStep(n);
+}
+
+function prevStep(n) {
+    showStep(n);
+}
+
+function onBackendChange() {
+    const backend = document.getElementById('backend').value;
+    const apiGroup = document.getElementById('api-key-group');
+    const ollamaGroup = document.getElementById('ollama-group');
+
+    const needsKey = {'claude': true, 'openai': true};
+    apiGroup.style.display = needsKey[backend] ? '' : 'none';
+    ollamaGroup.style.display = backend === 'ollama' ? '' : 'none';
+
+    if (backend === 'ollama') loadOllamaModels();
+}
+
+function loadOllamaModels() {
+    const select = document.getElementById('ollama_model');
+    select.innerHTML = '<option value="">Loading...</option>';
+
+    fetch('/api/wizard/ollama-models')
+        .then(r => r.json())
+        .then(data => {
+            select.innerHTML = '';
+            if (data.models.length > 0) {
+                data.models.forEach(m => {
+                    const opt = document.createElement('option');
+                    opt.value = m; opt.textContent = m;
+                    select.appendChild(opt);
+                });
+            }
+            // Add recommended models
+            const group = document.createElement('optgroup');
+            group.label = 'Pull a new model';
+            const recommended = {{ ollama_recommended | tojson }};
+            recommended.forEach(([key, desc]) => {
+                const opt = document.createElement('option');
+                opt.value = key; opt.textContent = desc;
+                group.appendChild(opt);
+            });
+            select.appendChild(group);
+
+            if (!data.installed) {
+                select.insertAdjacentHTML('afterend',
+                    '<small style="color:var(--pico-del-color)">Ollama not found. ' +
+                    '<a href="https://ollama.com/download" target="_blank">Install it</a> first.</small>');
+            }
+        })
+        .catch(() => {
+            select.innerHTML = '<option value="qwen3:4b">qwen3:4b (default)</option>';
+        });
+}
+
+function getFormData() {
+    return {
+        user_name: document.getElementById('user_name').value || 'User',
+        backend: document.getElementById('backend').value,
+        api_key: document.getElementById('api_key').value,
+        ollama_model: document.getElementById('ollama_model').value,
+        primary_lang: document.getElementById('primary_lang').value,
+        voice_en: document.getElementById('voice_en').value,
+        voice_ru: document.getElementById('voice_ru').value,
+        model_size: document.getElementById('model_size').value,
+        wakeword_enabled: document.getElementById('wakeword_enabled').checked,
+        wakeword_model: document.getElementById('wakeword_model').value,
+    };
+}
+
+function buildSummary() {
+    const d = getFormData();
+    const rows = [
+        ['User', d.user_name],
+        ['AI Backend', d.backend + (d.ollama_model ? ' (' + d.ollama_model + ')' : '')],
+        ['Language', d.primary_lang],
+        ['English voice', d.voice_en],
+        ['Russian voice', d.voice_ru],
+        ['STT Model', 'whisper-' + d.model_size],
+        ['Wake Word', d.wakeword_enabled ? d.wakeword_model : 'Disabled (push-to-talk)'],
+    ];
+    const tbody = document.getElementById('summary-table');
+    tbody.innerHTML = rows.map(([k,v]) =>
+        '<tr><td><strong>' + k + '</strong></td><td>' + v + '</td></tr>'
+    ).join('');
+}
+
+function saveWizard() {
+    const btn = document.getElementById('save-btn');
+    btn.disabled = true;
+    btn.setAttribute('aria-busy', 'true');
+    btn.textContent = 'Saving...';
+
+    fetch('/api/wizard/save', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(getFormData()),
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.ok) {
+            window.location.href = data.redirect || '/';
+        } else {
+            btn.disabled = false;
+            btn.removeAttribute('aria-busy');
+            btn.textContent = 'Save & Start';
+            alert('Error saving configuration');
+        }
+    })
+    .catch(() => {
+        btn.disabled = false;
+        btn.removeAttribute('aria-busy');
+        btn.textContent = 'Save & Start';
+        alert('Connection error');
+    });
+}
+
+// Init
+onBackendChange();
+</script>
+{% endblock %}

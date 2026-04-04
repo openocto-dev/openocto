@@ -30,7 +30,8 @@ def version() -> None:
 @click.option("--ai", default=None, help="AI backend: claude, claude-proxy, openai, etc.")
 @click.option("--user", "user_name", default=None, help="User name to run as (skips prompt when multiple users exist)")
 @click.option("--config", "config_path", default=None, help="Path to config file")
-def start(persona: str | None, ai: str | None, user_name: str | None, config_path: str | None) -> None:
+@click.option("--no-web", is_flag=True, default=False, help="Disable web admin panel")
+def start(persona: str | None, ai: str | None, user_name: str | None, config_path: str | None, no_web: bool) -> None:
     """Start OpenOcto voice assistant."""
     import asyncio
     from openocto.app import OpenOctoApp
@@ -42,7 +43,76 @@ def start(persona: str | None, ai: str | None, user_name: str | None, config_pat
         config.ai.default_backend = ai
 
     app = OpenOctoApp(config, user_name=user_name)
-    asyncio.run(app.run())
+    asyncio.run(app.run(web_enabled=not no_web))
+
+
+@main.command()
+@click.option("--host", default="0.0.0.0", help="Bind address")
+@click.option("--port", "-p", default=8080, help="Port number")
+def web(host: str, port: int) -> None:
+    """Start web admin panel only (no voice pipeline)."""
+    import asyncio
+
+    async def _run_web() -> None:
+        try:
+            from openocto.web import start_web_server
+        except ImportError:
+            click.secho("Web admin requires extra dependencies. Install with:", fg="red")
+            click.echo("  pip install -e '.[web]'")
+            raise SystemExit(1)
+
+        from openocto.web.server import create_web_app
+        from aiohttp import web as aio_web
+
+        # Create a minimal mock-like app object for the web server
+        from openocto.config import load_config, AppConfig, USER_CONFIG_PATH
+        from openocto.event_bus import EventBus
+        from openocto.state_machine import StateMachine
+        from openocto.history import HistoryStore
+        from types import SimpleNamespace
+
+        config = load_config() if USER_CONFIG_PATH.exists() else AppConfig()
+        config.web.host = host
+        config.web.port = port
+
+        event_bus = EventBus()
+        state_machine = StateMachine(event_bus)
+        history_store = HistoryStore()
+
+        # Minimal app context for web routes
+        octo = SimpleNamespace(
+            _config=config,
+            _event_bus=event_bus,
+            _state_machine=state_machine,
+            _history_store=history_store,
+            _current_user_id=None,
+            _persona=None,
+            _memory=None,
+            _ai_router=None,
+        )
+
+        # Resolve current user if any exist
+        users = history_store.list_users()
+        if users:
+            default = next((u for u in users if u["is_default"]), users[0])
+            octo._current_user_id = default["id"]
+
+        app = create_web_app(octo)
+        runner = aio_web.AppRunner(app)
+        await runner.setup()
+        site = aio_web.TCPSite(runner, host, port)
+        await site.start()
+
+        click.echo(f"\n  \U0001f310 Web admin: http://localhost:{port}\n")
+        try:
+            while True:
+                await asyncio.sleep(3600)
+        except (KeyboardInterrupt, asyncio.CancelledError):
+            pass
+        finally:
+            await runner.cleanup()
+
+    asyncio.run(_run_web())
 
 
 @main.command()

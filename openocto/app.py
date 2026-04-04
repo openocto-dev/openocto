@@ -557,13 +557,22 @@ class OpenOctoApp:
         # Schedule auto-listen as a separate task so _processing is fully released first
         asyncio.ensure_future(self._auto_listen())
 
-    async def run(self) -> None:
+    async def run(self, web_enabled: bool = True) -> None:
         """Main application loop."""
         self._loop = asyncio.get_running_loop()
         uid, uname = await self._resolve_user()
         self._current_user_id = uid
         logger.info("Active user: %s (id=%d)", uname, uid)
         self._init_components()
+
+        # Start web admin if enabled
+        self._web_task = None
+        if web_enabled and self._config.web.enabled:
+            try:
+                from openocto.web import start_web_server
+                self._web_task = asyncio.create_task(start_web_server(self))
+            except ImportError:
+                logger.debug("Web admin not available (install openocto[web])")
 
         # Health check: verify AI backend responds before starting
         print(f"{WRENCH} Checking AI backend ({self._ai_router.active_backend_name})...")

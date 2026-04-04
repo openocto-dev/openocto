@@ -113,6 +113,12 @@ memory:
   search_half_life_days: 30   # temporal decay half-life for search results
   semantic_search: true       # enable vector search (requires openocto[search])
 
+# Web Admin
+web:
+  enabled: true
+  host: "0.0.0.0"
+  port: 8080
+
 # Logging
 logging:
   level: "INFO"

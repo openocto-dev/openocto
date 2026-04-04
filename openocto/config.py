@@ -121,6 +121,12 @@ class LoggingConfig(BaseModel):
     file: str | None = None
 
 
+class WebConfig(BaseModel):
+    enabled: bool = True
+    host: str = "0.0.0.0"
+    port: int = 8080
+
+
 class AppConfig(BaseModel):
     persona: str = "octo"
     language: str = "auto"
@@ -131,6 +137,7 @@ class AppConfig(BaseModel):
     tts: TTSConfig = Field(default_factory=TTSConfig)
     ai: AIConfig = Field(default_factory=AIConfig)
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
+    web: WebConfig = Field(default_factory=WebConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
 
 

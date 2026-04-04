@@ -1,0 +1,113 @@
+/* OpenOcto web admin — custom styles */
+
+:root {
+    --pico-font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+/* Layout */
+body > nav {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: var(--pico-background-color);
+    border-bottom: 1px solid var(--pico-muted-border-color);
+}
+
+.container {
+    max-width: 960px;
+}
+
+/* Pipeline state badge */
+.state-badge {
+    display: inline-block;
+    padding: 0.2em 0.7em;
+    border-radius: 1em;
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.state-idle { background: var(--pico-ins-color); color: #fff; }
+.state-recording { background: #e74c3c; color: #fff; }
+.state-transcribing { background: #f39c12; color: #fff; }
+.state-processing { background: #3498db; color: #fff; }
+.state-speaking { background: #9b59b6; color: #fff; }
+
+/* Wizard */
+.wizard-step {
+    min-height: 300px;
+}
+
+.wizard-step h3 {
+    margin-top: 0;
+}
+
+.wizard-nav {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 2rem;
+}
+
+.wizard-progress {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 2rem;
+}
+
+.wizard-progress .step {
+    flex: 1;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--pico-muted-border-color);
+}
+
+.wizard-progress .step.active {
+    background: var(--pico-primary);
+}
+
+.wizard-progress .step.done {
+    background: var(--pico-ins-color);
+}
+
+/* Messages */
+.message-list {
+    list-style: none;
+    padding: 0;
+}
+
+.message-list li {
+    padding: 0.75rem;
+    border-bottom: 1px solid var(--pico-muted-border-color);
+}
+
+.message-list .role {
+    font-weight: 600;
+    text-transform: capitalize;
+}
+
+.message-list .meta {
+    font-size: 0.8rem;
+    color: var(--pico-muted-color);
+}
+
+/* Nav active state */
+nav a[aria-current="page"] {
+    font-weight: bold;
+}
+
+/* Card grid */
+.card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+}
+
+/* Flash messages */
+.flash {
+    padding: 0.75rem 1rem;
+    border-radius: var(--pico-border-radius);
+    margin-bottom: 1rem;
+}
+
+.flash-success { background: var(--pico-ins-color); color: #fff; }
+.flash-error { background: var(--pico-del-color); color: #fff; }
