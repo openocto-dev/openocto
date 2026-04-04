@@ -449,10 +449,11 @@ def _pull_ollama_model(model: str) -> bool:
 
 
 OLLAMA_RECOMMENDED_MODELS = [
-    ("llama3.2", "Llama 3.2 3B — fast, good quality (2 GB)"),
-    ("llama3.2:1b", "Llama 3.2 1B — very fast, lighter (1.3 GB)"),
-    ("qwen3", "Qwen 3 8B — strong multilingual incl. Russian (4.9 GB)"),
+    ("qwen3:4b", "⭐ Qwen 3 4B — best for Russian, fits RPi 5 8GB (2.6 GB)"),
+    ("qwen3:1.7b", "Qwen 3 1.7B — fastest with good Russian (1.5 GB)"),
+    ("llama3.2", "Llama 3.2 3B — fast, good quality, English-focused (2 GB)"),
     ("gemma3", "Gemma 3 4B — good balance of speed and quality (3 GB)"),
+    ("qwen3", "Qwen 3 8B — best quality, needs 8+ GB RAM (4.9 GB)"),
     ("mistral", "Mistral 7B — solid general purpose (4 GB)"),
 ]
 
