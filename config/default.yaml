@@ -76,6 +76,11 @@ ai:
       model: ""
       base_url: ""
 
+    ollama:
+      model: "qwen3-vl"
+      base_url: "http://localhost:11434/v1"
+      no_auth: true
+
     # --- Add more providers as needed ---
     # gemini:
     #   api_key: "${GEMINI_API_KEY}"

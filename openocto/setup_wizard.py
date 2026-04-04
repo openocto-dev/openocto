@@ -123,6 +123,7 @@ AI_BACKENDS = [
     ("claude-proxy", "Claude via subscription (local proxy, no API key)"),
     ("claude", "Claude API (requires ANTHROPIC_API_KEY)"),
     ("openai", "OpenAI (requires OPENAI_API_KEY)"),
+    ("ollama", "Ollama (local LLM, no API key)"),
 ]
 
 # Env var names for each backend
@@ -192,7 +193,7 @@ def _run_quick_setup(primary_lang: str) -> None:
     user_name = _step_create_user()
 
     # Step 2: AI backend (always ask — needs API key)
-    backend, api_key = _step_ai_backend()
+    backend, api_key, ollama_model = _step_ai_backend()
 
     # Everything else: recommended defaults
     model_size = QUICK_DEFAULTS["model_size"]
@@ -222,7 +223,7 @@ def _run_quick_setup(primary_lang: str) -> None:
     spinner = Spinner("Saving configuration...").start()
     _write_config(backend, api_key, model_size, voice_en, voice_ru, primary_lang,
                   input_device, output_device, wakeword_enabled, wakeword_model,
-                  mic_gain, vad_threshold, rms_threshold)
+                  mic_gain, vad_threshold, rms_threshold, ollama_model=ollama_model)
     spinner.stop(f"  {CHECK} Config saved")
 
     # Download models
@@ -245,10 +246,11 @@ def _run_custom_setup(from_step: int = 1) -> None:
 
     # Step 2: AI backend
     if from_step <= 2:
-        backend, api_key = _step_ai_backend()
+        backend, api_key, ollama_model = _step_ai_backend()
     else:
         backend = existing.get("ai", {}).get("default_backend", "claude")
         api_key = ""
+        ollama_model = existing.get("ai", {}).get("providers", {}).get("ollama", {}).get("model", "")
         click.secho(f"  >> [2/8] AI: {backend}", fg="yellow")
 
     # Step 3: Whisper model size
@@ -301,7 +303,7 @@ def _run_custom_setup(from_step: int = 1) -> None:
     # Step 8: Write config
     _write_config(backend, api_key, model_size, voice_en, voice_ru, primary_lang,
                   input_device, output_device, wakeword_enabled, wakeword_model,
-                  mic_gain, vad_threshold, rms_threshold)
+                  mic_gain, vad_threshold, rms_threshold, ollama_model=ollama_model)
 
     # Download models
     _step_download_models(model_size, voice_en, voice_ru, primary_lang,
@@ -363,8 +365,144 @@ def _step_create_user() -> str:
     return name
 
 
-def _step_ai_backend() -> tuple[str, str]:
-    """Step 2: Choose AI backend and optionally enter API key."""
+def _list_ollama_models() -> list[str]:
+    """Query Ollama for installed models. Returns list of model names."""
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["ollama", "list"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode != 0:
+            return []
+        models = []
+        for line in result.stdout.strip().splitlines()[1:]:  # skip header
+            name = line.split()[0]
+            if name:
+                models.append(name)
+        return models
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return []
+
+
+def _is_ollama_installed() -> bool:
+    """Check if ollama binary is available."""
+    import shutil
+    return shutil.which("ollama") is not None
+
+
+def _install_ollama() -> bool:
+    """Install Ollama via official install script. Returns True on success."""
+    import platform
+    import subprocess
+
+    system = platform.system()
+    if system == "Darwin":
+        click.echo("  Ollama for macOS requires the desktop app.")
+        click.echo("  Download from: https://ollama.com/download/mac")
+        click.echo()
+        if not click.confirm("  Already installed? Continue?", default=False):
+            return False
+        return _is_ollama_installed()
+    elif system == "Linux":
+        click.echo()
+        if not click.confirm("  Install Ollama via official script (curl | sh)?", default=True):
+            click.secho("  Install manually: https://ollama.com/download", fg="yellow")
+            return False
+        spinner = Spinner("Installing Ollama...").start()
+        result = subprocess.run(
+            ["bash", "-c", "curl -fsSL https://ollama.com/install.sh | sh"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        spinner.stop()
+        if result.returncode == 0:
+            click.secho(f"  {CHECK} Ollama installed!", fg="green")
+            return True
+        else:
+            click.secho(f"  {WARN}  Installation failed. Install manually: https://ollama.com/download", fg="yellow")
+            return False
+    else:
+        click.echo("  Download Ollama from: https://ollama.com/download")
+        click.echo()
+        if not click.confirm("  Already installed? Continue?", default=False):
+            return False
+        return _is_ollama_installed()
+
+
+def _pull_ollama_model(model: str) -> bool:
+    """Pull an Ollama model. Returns True on success."""
+    import subprocess
+
+    click.echo()
+    spinner = Spinner(f"Downloading {model}... (this may take a while)").start()
+    result = subprocess.run(
+        ["ollama", "pull", model],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        timeout=600,
+    )
+    spinner.stop()
+    if result.returncode == 0:
+        click.secho(f"  {CHECK} Model {model} ready!", fg="green")
+        return True
+    click.secho(f"  {WARN}  Failed to pull {model}. Run manually: ollama pull {model}", fg="yellow")
+    return False
+
+
+OLLAMA_RECOMMENDED_MODELS = [
+    ("llama3.2", "Llama 3.2 3B — fast, good quality (2 GB)"),
+    ("llama3.2:1b", "Llama 3.2 1B — very fast, lighter (1.3 GB)"),
+    ("qwen3", "Qwen 3 8B — strong multilingual incl. Russian (4.9 GB)"),
+    ("gemma3", "Gemma 3 4B — good balance of speed and quality (3 GB)"),
+    ("mistral", "Mistral 7B — solid general purpose (4 GB)"),
+]
+
+
+def _step_ollama_model() -> str:
+    """Check Ollama installation, list/pull models, return chosen model name."""
+    # 1. Check if Ollama is installed
+    if not _is_ollama_installed():
+        click.secho(f"  {WARN}  Ollama is not installed.", fg="yellow")
+        if not _install_ollama():
+            click.secho(f"  {WARN}  Skipping Ollama setup. Install later: https://ollama.com/download", fg="yellow")
+            return ""
+
+    click.secho(f"  {CHECK} Ollama found.", fg="green")
+
+    # 2. List installed models
+    models = _list_ollama_models()
+    if models:
+        click.secho(f"  {CHECK} Installed models: {', '.join(models)}", fg="green")
+        click.echo()
+        model_choices = [
+            questionary.Choice(title=m, value=m) for m in models
+        ] + [questionary.Choice(title=">>  Pull a new model", value="__pull__")]
+        chosen = _select("  Choose model:", choices=model_choices, default=models[0])
+        if chosen != "__pull__":
+            click.secho(f"  {CHECK} Using model: {chosen}", fg="green")
+            return chosen
+
+    # 3. No models or user wants a new one — offer recommended
+    click.echo()
+    click.secho("  No models installed." if not models else "  Choose a model to download:", bold=True)
+    click.echo()
+    rec_choices = [
+        questionary.Choice(title=desc, value=name) for name, desc in OLLAMA_RECOMMENDED_MODELS
+    ] + [questionary.Choice(title=">>  Enter custom model name", value="__custom__")]
+    chosen = _select("  Choose model to pull:", choices=rec_choices, default=OLLAMA_RECOMMENDED_MODELS[0][0])
+
+    if chosen == "__custom__":
+        chosen = click.prompt("  Model name (e.g. phi3, llama3.2:1b)", default="llama3.2")
+
+    _pull_ollama_model(chosen)
+    click.secho(f"  {CHECK} Using model: {chosen}", fg="green")
+    return chosen
+
+
+def _step_ai_backend() -> tuple[str, str, str]:
+    """Step 2: Choose AI backend and optionally enter API key.
+
+    Returns (backend, api_key, ollama_model).
+    """
     click.secho(f"{WRENCH} [2/8] AI Brain", bold=True)
     click.echo()
 
@@ -377,8 +515,9 @@ def _step_ai_backend() -> tuple[str, str]:
 
     if backend == "skip":
         click.secho("  >>  Skipped. Configure later in ~/.openocto/config.yaml\n", fg="yellow")
-        return "claude", ""
+        return "claude", "", ""
     api_key = ""
+    ollama_model = ""
 
     env_var = BACKEND_ENV_KEYS.get(backend)
     if env_var:
@@ -397,9 +536,11 @@ def _step_ai_backend() -> tuple[str, str]:
                 click.secho(f"  {WARN}  Skipped. Set {env_var} before running.\n", fg="yellow")
     elif backend == "claude-proxy":
         click.secho(f"  {CHECK} No API key needed — uses your Claude subscription via local proxy.", fg="green")
+    elif backend == "ollama":
+        ollama_model = _step_ollama_model()
 
     click.echo()
-    return backend, api_key
+    return backend, api_key, ollama_model
 
 
 def _step_tts_voices() -> tuple[str, str, str]:
@@ -772,7 +913,7 @@ def _write_config(backend: str, api_key: str, model_size: str, voice_en: str, vo
                   primary_lang: str, input_device, output_device,
                   wakeword_enabled: bool, wakeword_model: str,
                   mic_gain: float | None = None, vad_threshold: float = 0.3,
-                  rms_threshold: int = 300) -> None:
+                  rms_threshold: int = 300, ollama_model: str = "") -> None:
     """Step 6: Write user config file."""
     click.secho(f"{CHECK} [8/8] Saving configuration", bold=True)
 
@@ -805,8 +946,15 @@ def _write_config(backend: str, api_key: str, model_size: str, voice_en: str, vo
     if wakeword_enabled and wakeword_model:
         config["wakeword"] = {"enabled": True, "model": wakeword_model}
 
-    # Store API key in config if provided
-    if api_key:
+    # Store API key / provider config
+    if backend == "ollama" and ollama_model:
+        config["ai"].setdefault("providers", {})
+        config["ai"]["providers"]["ollama"] = {
+            "model": ollama_model,
+            "base_url": "http://localhost:11434/v1",
+            "no_auth": True,
+        }
+    elif api_key:
         env_var = BACKEND_ENV_KEYS.get(backend, "")
         if backend == "claude":
             config["ai"]["claude"] = {"api_key": api_key}

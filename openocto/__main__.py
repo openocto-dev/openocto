@@ -20,6 +20,12 @@ def main(ctx: click.Context) -> None:
 
 
 @main.command()
+def version() -> None:
+    """Show OpenOcto version."""
+    click.echo(f"openocto {__version__}")
+
+
+@main.command()
 @click.option("--persona", default=None, help="Persona name (default: from config)")
 @click.option("--ai", default=None, help="AI backend: claude, claude-proxy, openai, etc.")
 @click.option("--user", "user_name", default=None, help="User name to run as (skips prompt when multiple users exist)")
