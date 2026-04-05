@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Messages — OpenOcto{% endblock %}
+{% block title %}{{ t('msg.title') }} — OpenOcto{% endblock %}
 
 {% block content %}
 <div class="chat-page">
@@ -11,7 +11,7 @@
     <!-- Top bar: filters + controls -->
     <div class="chat-topbar">
         <div class="chat-topbar-left">
-            <h2 style="margin: 0;">Chat</h2>
+            <h2 style="margin: 0;">{{ t('msg.title') }}</h2>
             <span class="chat-persona-badge">{{ persona }}</span>
         </div>
         <div class="chat-topbar-right">
@@ -35,16 +35,16 @@
                     <form method="GET" action="/messages" style="padding: 0.5rem;">
                         <input type="hidden" name="user_id" value="{{ user_id }}">
                         <input type="hidden" name="persona" value="{{ persona }}">
-                        <input type="text" name="q" value="{{ query }}" placeholder="Search messages..." style="margin-bottom: 0.5rem;">
-                        <button type="submit" class="btn-sm outline" style="width: 100%;">Search</button>
+                        <input type="text" name="q" value="{{ query }}" placeholder="{{ t('msg.search') }}" style="margin-bottom: 0.5rem;">
+                        <button type="submit" class="btn-sm outline" style="width: 100%;">{{ t('msg.search_btn') }}</button>
                     </form>
                     <hr style="margin: 0.25rem 0;">
                     <form method="POST" action="/api/messages/clear"
-                          onsubmit="return confirm('Clear all messages for {{ persona }}?')"
+                          onsubmit="return confirm('{{ t('msg.confirm_clear') }}')"
                           style="padding: 0.5rem;">
                         <input type="hidden" name="user_id" value="{{ user_id }}">
                         <input type="hidden" name="persona" value="{{ persona }}">
-                        <button type="submit" class="btn-sm contrast" style="width: 100%;">Clear History</button>
+                        <button type="submit" class="btn-sm contrast" style="width: 100%;">{{ t('msg.clear_history') }}</button>
                     </form>
                 </div>
             </details>
@@ -61,13 +61,13 @@
     <div class="chat-messages" id="chat-messages">
         {% if has_next %}
         <div style="text-align: center; padding: 0.5rem;">
-            <a href="/messages?user_id={{ user_id }}&persona={{ persona }}&page={{ current_page + 1 }}" class="btn-sm outline">Load older messages</a>
+            <a href="/messages?user_id={{ user_id }}&persona={{ persona }}&page={{ current_page + 1 }}" class="btn-sm outline">{{ t('msg.load_more') }}</a>
         </div>
         {% endif %}
 
         {% if not messages %}
         <div class="chat-empty">
-            <p>No messages yet. Start a conversation below.</p>
+            <p>{{ t('msg.no_messages') }}</p>
         </div>
         {% endif %}
 
@@ -134,6 +134,7 @@
     var ttsEnabled = localStorage.getItem('oo-tts') !== 'off';
     var userId = {{ user_id or 'null' }};
     var persona = '{{ persona }}';
+    var connError = '{{ t("common.connection_error") }}';
 
     if (!input) return;
 
@@ -248,12 +249,12 @@
             if (data.content) {
                 addBubble('assistant', data.content);
             } else if (data.error) {
-                addBubble('assistant', '[Error: ' + data.error + ']');
+                addBubble('assistant', '[' + data.error + ']');
             }
         })
         .catch(function(err) {
             messages.removeChild(typing);
-            addBubble('assistant', '[Connection error]');
+            addBubble('assistant', '[' + connError + ']');
         })
         .finally(function() {
             sendBtn.disabled = false;

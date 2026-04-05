@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Setup Wizard — OpenOcto{% endblock %}
+{% block title %}{{ t('wiz.title') }} — OpenOcto{% endblock %}
 
 {% block nav %}
 <!-- No sidebar on wizard page -->
@@ -7,8 +7,8 @@
 
 {% block content %}
 <div style="display: flex; justify-content: space-between; align-items: center; max-width: 600px; margin: 0 auto 1.5rem;">
-    <strong style="font-size: 1.2rem;">&#x1f419; OpenOcto Setup</strong>
-    <a href="/" role="button" class="outline secondary btn-sm">Cancel</a>
+    <strong style="font-size: 1.2rem;">&#x1f419; {{ t('wiz.title') }}</strong>
+    <a href="/" role="button" class="outline secondary btn-sm">{{ t('wiz.cancel') }}</a>
 </div>
 <article style="max-width: 600px; margin: 0 auto;">
     <div class="wizard-progress" id="progress">
@@ -20,24 +20,24 @@
     <div id="wizard-container">
         <!-- Step 1: Welcome + User -->
         <div class="wizard-step" data-step="1">
-            <h3>&#x1f44b; Welcome to OpenOcto</h3>
-            <p>Let's set up your voice assistant. This will only take a minute.</p>
+            <h3>&#x1f44b; {{ t('wiz.step1.title') }}</h3>
+            <p>{{ t('wiz.step1.desc') }}</p>
 
-            <label for="user_name">Your name</label>
+            <label for="user_name">{{ t('wiz.step1.name') }}</label>
             <input type="text" id="user_name" name="user_name" value="{{ default_user_name }}" required>
 
             <div class="wizard-nav">
                 <span></span>
-                <button type="button" onclick="nextStep(2)">Next &rarr;</button>
+                <button type="button" onclick="nextStep(2)">{{ t('wiz.next') }} &rarr;</button>
             </div>
         </div>
 
         <!-- Step 2: AI Backend -->
         <div class="wizard-step" data-step="2" hidden>
-            <h3>&#x1f9e0; AI Backend</h3>
-            <p>Choose how OpenOcto will think.</p>
+            <h3>&#x1f9e0; {{ t('wiz.step2.title') }}</h3>
+            <p>{{ t('wiz.step2.desc') }}</p>
 
-            <label for="backend">Backend</label>
+            <label for="backend">{{ t('wiz.step2.backend') }}</label>
             <select id="backend" name="backend" onchange="onBackendChange()">
                 {% for key, desc in ai_backends %}
                 <option value="{{ key }}">{{ desc }}</option>
@@ -45,45 +45,45 @@
             </select>
 
             <div id="api-key-group" style="display:none;">
-                <label for="api_key">API Key</label>
-                <input type="password" id="api_key" name="api_key" placeholder="Enter your API key">
+                <label for="api_key">{{ t('wiz.step2.api_key') }}</label>
+                <input type="password" id="api_key" name="api_key" placeholder="{{ t('wiz.step2.api_key_placeholder') }}">
             </div>
 
             <div id="ollama-group" style="display:none;">
-                <label for="ollama_model">Ollama Model</label>
+                <label for="ollama_model">{{ t('wiz.step2.ollama_model') }}</label>
                 <select id="ollama_model" name="ollama_model">
-                    <option value="">Loading...</option>
+                    <option value="">{{ t('common.loading') }}</option>
                 </select>
                 <small>
-                    <a href="#" onclick="loadOllamaModels(); return false;">Refresh models</a>
+                    <a href="#" onclick="loadOllamaModels(); return false;">{{ t('wiz.step2.refresh') }}</a>
                 </small>
             </div>
 
             <div class="wizard-nav">
-                <button type="button" class="secondary" onclick="prevStep(1)">&larr; Back</button>
-                <button type="button" onclick="nextStep(3)">Next &rarr;</button>
+                <button type="button" class="secondary" onclick="prevStep(1)">&larr; {{ t('wiz.back') }}</button>
+                <button type="button" onclick="nextStep(3)">{{ t('wiz.next') }} &rarr;</button>
             </div>
         </div>
 
         <!-- Step 3: Language + Voices -->
         <div class="wizard-step" data-step="3" hidden>
-            <h3>&#x1f3a4; Language &amp; Voice</h3>
+            <h3>&#x1f3a4; {{ t('wiz.step3.title') }}</h3>
 
-            <label for="primary_lang">Primary language</label>
+            <label for="primary_lang">{{ t('wiz.step3.primary_lang') }}</label>
             <select id="primary_lang" name="primary_lang">
-                <option value="en" {% if primary_lang == 'en' %}selected{% endif %}>English</option>
-                <option value="ru" {% if primary_lang == 'ru' %}selected{% endif %}>Russian</option>
-                <option value="auto">Auto-detect</option>
+                <option value="en" {% if primary_lang == 'en' %}selected{% endif %}>{{ t('wiz.step3.english') }}</option>
+                <option value="ru" {% if primary_lang == 'ru' %}selected{% endif %}>{{ t('wiz.step3.russian') }}</option>
+                <option value="auto">{{ t('wiz.step3.auto') }}</option>
             </select>
 
-            <label for="voice_en">English voice (Piper TTS)</label>
+            <label for="voice_en">{{ t('wiz.step3.voice_en') }}</label>
             <select id="voice_en" name="voice_en">
                 {% for key, desc in tts_voices_en %}
                 <option value="{{ key }}" {% if loop.first %}selected{% endif %}>{{ desc }}</option>
                 {% endfor %}
             </select>
 
-            <label for="voice_ru">Russian voice (Silero TTS)</label>
+            <label for="voice_ru">{{ t('wiz.step3.voice_ru') }}</label>
             <select id="voice_ru" name="voice_ru">
                 {% for key, desc in silero_speakers_ru %}
                 <option value="{{ key }}" {% if loop.first %}selected{% endif %}>{{ desc }}</option>
@@ -91,17 +91,17 @@
             </select>
 
             <div class="wizard-nav">
-                <button type="button" class="secondary" onclick="prevStep(2)">&larr; Back</button>
-                <button type="button" onclick="nextStep(4)">Next &rarr;</button>
+                <button type="button" class="secondary" onclick="prevStep(2)">&larr; {{ t('wiz.back') }}</button>
+                <button type="button" onclick="nextStep(4)">{{ t('wiz.next') }} &rarr;</button>
             </div>
         </div>
 
         <!-- Step 4: STT Model -->
         <div class="wizard-step" data-step="4" hidden>
-            <h3>&#x1f50a; Speech Recognition</h3>
-            <p>Larger models are more accurate but slower and use more memory.</p>
+            <h3>&#x1f50a; {{ t('wiz.step4.title') }}</h3>
+            <p>{{ t('wiz.step4.desc') }}</p>
 
-            <label for="model_size">Whisper model size</label>
+            <label for="model_size">{{ t('wiz.step4.model_size') }}</label>
             <select id="model_size" name="model_size">
                 {% for key, desc in whisper_model_sizes %}
                 <option value="{{ key }}" {% if key == 'small' %}selected{% endif %}>{{ desc }}</option>
@@ -109,24 +109,24 @@
             </select>
 
             <div class="wizard-nav">
-                <button type="button" class="secondary" onclick="prevStep(3)">&larr; Back</button>
-                <button type="button" onclick="nextStep(5)">Next &rarr;</button>
+                <button type="button" class="secondary" onclick="prevStep(3)">&larr; {{ t('wiz.back') }}</button>
+                <button type="button" onclick="nextStep(5)">{{ t('wiz.next') }} &rarr;</button>
             </div>
         </div>
 
         <!-- Step 5: Wake Word -->
         <div class="wizard-step" data-step="5" hidden>
-            <h3>&#x1f3af; Wake Word</h3>
-            <p>Enable hands-free activation with a wake word, or use push-to-talk.</p>
+            <h3>&#x1f3af; {{ t('wiz.step5.title') }}</h3>
+            <p>{{ t('wiz.step5.desc') }}</p>
 
             <fieldset>
                 <label>
                     <input type="checkbox" id="wakeword_enabled" name="wakeword_enabled" checked>
-                    Enable wake word detection
+                    {{ t('wiz.step5.enable') }}
                 </label>
             </fieldset>
 
-            <label for="wakeword_model">Wake word</label>
+            <label for="wakeword_model">{{ t('wiz.step5.model') }}</label>
             <select id="wakeword_model" name="wakeword_model">
                 {% for key, desc in wake_word_options %}
                 <option value="{{ key }}" {% if loop.first %}selected{% endif %}>{{ desc }}</option>
@@ -134,48 +134,48 @@
             </select>
 
             <div class="wizard-nav">
-                <button type="button" class="secondary" onclick="prevStep(4)">&larr; Back</button>
-                <button type="button" onclick="nextStep(6)">Next &rarr;</button>
+                <button type="button" class="secondary" onclick="prevStep(4)">&larr; {{ t('wiz.back') }}</button>
+                <button type="button" onclick="nextStep(6)">{{ t('wiz.next') }} &rarr;</button>
             </div>
         </div>
 
         <!-- Step 6: Mic Calibration -->
         <div class="wizard-step" data-step="6" hidden>
-            <h3>&#x1f399; Microphone Calibration</h3>
-            <p>Calibrate your microphone so OpenOcto knows when you're speaking.</p>
+            <h3>&#x1f399; {{ t('wiz.step6.title') }}</h3>
+            <p>{{ t('wiz.step6.desc') }}</p>
 
             <div style="margin-bottom:1rem;">
-                <strong>1. Record silence</strong>
-                <p><small>Click and stay quiet for 3 seconds.</small></p>
-                <button type="button" id="wiz-btn-silence" onclick="wizRecordPhase('silence', 3)">Record Silence (3s)</button>
+                <strong>1. {{ t('wiz.step6.silence') }}</strong>
+                <p><small>{{ t('wiz.step6.silence_desc') }}</small></p>
+                <button type="button" id="wiz-btn-silence" onclick="wizRecordPhase('silence', 3)">{{ t('cal.record_silence') }}</button>
                 <div id="wiz-silence-status"></div>
             </div>
 
             <div style="margin-bottom:1rem;">
-                <strong>2. Record speech</strong>
-                <p><small>Click and speak continuously for 5 seconds.</small></p>
-                <button type="button" id="wiz-btn-speech" onclick="wizRecordPhase('speech', 5)">Record Speech (5s)</button>
+                <strong>2. {{ t('wiz.step6.speech') }}</strong>
+                <p><small>{{ t('wiz.step6.speech_desc') }}</small></p>
+                <button type="button" id="wiz-btn-speech" onclick="wizRecordPhase('speech', 5)">{{ t('cal.record_speech') }}</button>
                 <div id="wiz-speech-status"></div>
             </div>
 
             <div id="wiz-cal-result" style="display:none; margin-bottom:1rem;">
                 <table>
-                    <thead><tr><th>Parameter</th><th>Value</th></tr></thead>
+                    <thead><tr><th>{{ t('cal.parameter') }}</th><th>Value</th></tr></thead>
                     <tbody id="wiz-cal-table"></tbody>
                 </table>
             </div>
 
             <div class="wizard-nav">
-                <button type="button" class="secondary" onclick="prevStep(5)">&larr; Back</button>
-                <button type="button" onclick="nextStep(7)">Next &rarr;</button>
+                <button type="button" class="secondary" onclick="prevStep(5)">&larr; {{ t('wiz.back') }}</button>
+                <button type="button" onclick="nextStep(7)">{{ t('wiz.next') }} &rarr;</button>
             </div>
-            <small style="color:var(--pico-muted-color);">You can skip this step and calibrate later from Settings &rarr; Mic Calibration.</small>
+            <small style="color:var(--pico-muted-color);">{{ t('wiz.step6.skip_note') }}</small>
         </div>
 
         <!-- Step 7: Summary + Save -->
         <div class="wizard-step" data-step="7" hidden>
-            <h3>&#x2705; Ready to go!</h3>
-            <p>Review your settings and save.</p>
+            <h3>&#x2705; {{ t('wiz.step7.title') }}</h3>
+            <p>{{ t('wiz.step7.desc') }}</p>
 
             <table>
                 <tbody id="summary-table">
@@ -183,8 +183,8 @@
             </table>
 
             <div class="wizard-nav">
-                <button type="button" class="secondary" onclick="prevStep(6)">&larr; Back</button>
-                <button type="button" id="save-btn" onclick="saveWizard()">Save &amp; Start</button>
+                <button type="button" class="secondary" onclick="prevStep(6)">&larr; {{ t('wiz.back') }}</button>
+                <button type="button" id="save-btn" onclick="saveWizard()">{{ t('wiz.save') }}</button>
             </div>
         </div>
     </div>
@@ -195,6 +195,32 @@
 <script>
 const TOTAL_STEPS = {{ total_steps }};
 let currentStep = 1;
+
+const WIZ_I18N = {
+    next: '{{ t("wiz.next") }}',
+    back: '{{ t("wiz.back") }}',
+    save: '{{ t("wiz.save") }}',
+    saving: '{{ t("wiz.saving") }}',
+    recording: '{{ t("cal.recording") }}',
+    processing: '{{ t("cal.processing") }}',
+    recorded: '{{ t("cal.recorded") }}',
+    re_record: '{{ t("cal.re_record") }}',
+    error: '{{ t("common.error") }}',
+    connection_error: '{{ t("common.connection_error") }}',
+    ollama_not_found: '{{ t("wiz.step2.ollama_not_found") }}',
+    install_ollama: '{{ t("wiz.step2.install_ollama") }}',
+    pull_new: '{{ t("wiz.step2.pull_new") }}',
+    summary_user: '{{ t("wiz.summary.user") }}',
+    summary_backend: '{{ t("wiz.summary.backend") }}',
+    summary_language: '{{ t("wiz.summary.language") }}',
+    summary_voice_en: '{{ t("wiz.summary.voice_en") }}',
+    summary_voice_ru: '{{ t("wiz.summary.voice_ru") }}',
+    summary_stt: '{{ t("wiz.summary.stt") }}',
+    summary_wakeword: '{{ t("wiz.summary.wakeword") }}',
+    wakeword_disabled: '{{ t("wiz.summary.wakeword_disabled") }}',
+    mic_cal: '{{ t("wiz.step7.mic_cal") }}',
+    skipped: '{{ t("wiz.step7.skipped") }}',
+};
 
 function showStep(n) {
     document.querySelectorAll('.wizard-step').forEach(el => el.hidden = true);
@@ -232,7 +258,7 @@ function onBackendChange() {
 
 function loadOllamaModels() {
     const select = document.getElementById('ollama_model');
-    select.innerHTML = '<option value="">Loading...</option>';
+    select.innerHTML = '<option value="">{{ t("common.loading") }}</option>';
 
     fetch('/api/wizard/ollama-models')
         .then(r => r.json())
@@ -247,7 +273,7 @@ function loadOllamaModels() {
             }
             // Add recommended models
             const group = document.createElement('optgroup');
-            group.label = 'Pull a new model';
+            group.label = WIZ_I18N.pull_new;
             const recommended = {{ ollama_recommended | tojson }};
             recommended.forEach(([key, desc]) => {
                 const opt = document.createElement('option');
@@ -258,8 +284,8 @@ function loadOllamaModels() {
 
             if (!data.installed) {
                 select.insertAdjacentHTML('afterend',
-                    '<small style="color:var(--pico-del-color)">Ollama not found. ' +
-                    '<a href="https://ollama.com/download" target="_blank">Install it</a> first.</small>');
+                    '<small style="color:var(--pico-del-color)">' + WIZ_I18N.ollama_not_found + ' ' +
+                    '<a href="https://ollama.com/download" target="_blank">' + WIZ_I18N.install_ollama + '</a></small>');
             }
         })
         .catch(() => {
@@ -285,13 +311,13 @@ function getFormData() {
 function buildSummary() {
     const d = getFormData();
     const rows = [
-        ['User', d.user_name],
-        ['AI Backend', d.backend + (d.ollama_model ? ' (' + d.ollama_model + ')' : '')],
-        ['Language', d.primary_lang],
-        ['English voice', d.voice_en],
-        ['Russian voice', d.voice_ru],
-        ['STT Model', 'whisper-' + d.model_size],
-        ['Wake Word', d.wakeword_enabled ? d.wakeword_model : 'Disabled (push-to-talk)'],
+        [WIZ_I18N.summary_user, d.user_name],
+        [WIZ_I18N.summary_backend, d.backend + (d.ollama_model ? ' (' + d.ollama_model + ')' : '')],
+        [WIZ_I18N.summary_language, d.primary_lang],
+        [WIZ_I18N.summary_voice_en, d.voice_en],
+        [WIZ_I18N.summary_voice_ru, d.voice_ru],
+        [WIZ_I18N.summary_stt, 'whisper-' + d.model_size],
+        [WIZ_I18N.summary_wakeword, d.wakeword_enabled ? d.wakeword_model : WIZ_I18N.wakeword_disabled],
     ];
     const tbody = document.getElementById('summary-table');
     tbody.innerHTML = rows.map(([k,v]) =>
@@ -303,7 +329,7 @@ function saveWizard() {
     const btn = document.getElementById('save-btn');
     btn.disabled = true;
     btn.setAttribute('aria-busy', 'true');
-    btn.textContent = 'Saving...';
+    btn.textContent = WIZ_I18N.saving;
 
     fetch('/api/wizard/save', {
         method: 'POST',
@@ -317,15 +343,15 @@ function saveWizard() {
         } else {
             btn.disabled = false;
             btn.removeAttribute('aria-busy');
-            btn.textContent = 'Save & Start';
-            alert('Error saving configuration');
+            btn.textContent = WIZ_I18N.save;
+            alert(WIZ_I18N.error);
         }
     })
     .catch(() => {
         btn.disabled = false;
         btn.removeAttribute('aria-busy');
-        btn.textContent = 'Save & Start';
-        alert('Connection error');
+        btn.textContent = WIZ_I18N.save;
+        alert(WIZ_I18N.connection_error);
     });
 }
 
@@ -341,13 +367,13 @@ function wizRecordPhase(phase, duration) {
     btn.setAttribute('aria-busy', 'true');
 
     let remaining = duration;
-    status.innerHTML = '<span class="rec-indicator"></span> <small>Recording ' + remaining + 's...</small>';
+    status.innerHTML = '<span class="rec-indicator"></span> <small>' + WIZ_I18N.recording + ' ' + remaining + 's...</small>';
     const timer = setInterval(() => {
         remaining--;
         if (remaining > 0) {
-            status.innerHTML = '<span class="rec-indicator"></span> <small>Recording ' + remaining + 's...</small>';
+            status.innerHTML = '<span class="rec-indicator"></span> <small>' + WIZ_I18N.recording + ' ' + remaining + 's...</small>';
         } else {
-            status.innerHTML = '<span class="rec-indicator"></span> <small>Processing...</small>';
+            status.innerHTML = '<span class="rec-indicator"></span> <small>' + WIZ_I18N.processing + '</small>';
             clearInterval(timer);
         }
     }, 1000);
@@ -362,10 +388,10 @@ function wizRecordPhase(phase, duration) {
         clearInterval(timer);
         btn.disabled = false;
         btn.removeAttribute('aria-busy');
-        btn.textContent = 'Re-record ' + phase;
+        btn.textContent = WIZ_I18N.re_record + ' ' + phase;
 
         wizCalData[phase] = result;
-        status.innerHTML = '<small style="color:var(--pico-ins-color)">Recorded! RMS mean=' + result.stats.rms_mean + ', prob max=' + result.stats.prob_max + '</small>';
+        status.innerHTML = '<small style="color:var(--pico-ins-color)">' + WIZ_I18N.recorded + ' RMS mean=' + result.stats.rms_mean + ', prob max=' + result.stats.prob_max + '</small>';
 
         if (phase === 'speech') {
             const rms_vals = result.chunks.map(c => c.rms).sort((a,b) => a-b);
@@ -380,7 +406,7 @@ function wizRecordPhase(phase, duration) {
         clearInterval(timer);
         btn.disabled = false;
         btn.removeAttribute('aria-busy');
-        status.innerHTML = '<small style="color:var(--pico-del-color)">Error: ' + err + '</small>';
+        status.innerHTML = '<small style="color:var(--pico-del-color)">' + WIZ_I18N.error + ': ' + err + '</small>';
     });
 }
 
@@ -424,10 +450,10 @@ buildSummary = function() {
     if (wizCalRecommended) {
         const tbody = document.getElementById('summary-table');
         const r = wizCalRecommended;
-        tbody.innerHTML += '<tr><td><strong>Mic calibration</strong></td><td>RMS=' + r.rms_speech_threshold + ', Silero=' + r.threshold + ', silence=' + r.silence_duration + 's</td></tr>';
+        tbody.innerHTML += '<tr><td><strong>' + WIZ_I18N.mic_cal + '</strong></td><td>RMS=' + r.rms_speech_threshold + ', Silero=' + r.threshold + ', silence=' + r.silence_duration + 's</td></tr>';
     } else {
         const tbody = document.getElementById('summary-table');
-        tbody.innerHTML += '<tr><td><strong>Mic calibration</strong></td><td><em>Skipped</em></td></tr>';
+        tbody.innerHTML += '<tr><td><strong>' + WIZ_I18N.mic_cal + '</strong></td><td><em>' + WIZ_I18N.skipped + '</em></td></tr>';
     }
 };
 

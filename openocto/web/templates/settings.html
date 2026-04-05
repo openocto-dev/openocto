@@ -1,38 +1,36 @@
 {% extends "base.html" %}
-{% block title %}Settings — OpenOcto{% endblock %}
+{% block title %}{{ t('settings.title') }} — OpenOcto{% endblock %}
 
 {% block content %}
-<h2>Settings</h2>
+<h2>{{ t('settings.title') }}</h2>
 <p><small>UI preferences are saved locally in your browser.</small></p>
 
 <article>
-    <header>Appearance</header>
+    <header>{{ t('settings.appearance') }}</header>
 
     <div class="setting-row">
         <div class="setting-label">
-            <strong>Theme</strong>
-            <small>Choose how the admin panel looks</small>
+            <strong>{{ t('settings.theme') }}</strong>
         </div>
         <div class="theme-switcher" id="theme-switcher">
             <label id="theme-light">
                 <input type="radio" name="theme" value="light">
-                <span>Light</span>
+                <span>{{ t('settings.theme_light') }}</span>
             </label>
             <label id="theme-dark">
                 <input type="radio" name="theme" value="dark">
-                <span>Dark</span>
+                <span>{{ t('settings.theme_dark') }}</span>
             </label>
             <label id="theme-system">
                 <input type="radio" name="theme" value="system">
-                <span>System</span>
+                <span>{{ t('settings.theme_system') }}</span>
             </label>
         </div>
     </div>
 
     <div class="setting-row">
         <div class="setting-label">
-            <strong>Font size</strong>
-            <small>Base font size for the interface</small>
+            <strong>{{ t('settings.font_size') }}</strong>
         </div>
         <div class="setting-control">
             <select id="setting-font-size">
@@ -47,8 +45,7 @@
 
     <div class="setting-row">
         <div class="setting-label">
-            <strong>Sidebar width</strong>
-            <small>Navigation panel width in pixels</small>
+            <strong>{{ t('settings.sidebar_width') }}</strong>
         </div>
         <div class="setting-control">
             <select id="setting-sidebar-width">
@@ -62,23 +59,21 @@
 
     <div class="setting-row">
         <div class="setting-label">
-            <strong>Content width</strong>
-            <small>Maximum width of the main content area</small>
+            <strong>{{ t('settings.content_width') }}</strong>
         </div>
         <div class="setting-control">
             <select id="setting-content-width">
                 <option value="800px">Narrow (800px)</option>
                 <option value="960px">Default (960px)</option>
                 <option value="1120px">Wide (1120px)</option>
-                <option value="100%">Full width</option>
+                <option value="100%">{{ t('settings.full_width') }}</option>
             </select>
         </div>
     </div>
 
     <div class="setting-row">
         <div class="setting-label">
-            <strong>Control height</strong>
-            <small>Height of buttons, inputs, and selects</small>
+            <strong>{{ t('settings.control_height') }}</strong>
         </div>
         <div class="setting-control">
             <select id="setting-control-height">
@@ -92,20 +87,56 @@
 </article>
 
 <article>
-    <header>About</header>
+    <header>{{ t('settings.language') }}</header>
+    <div class="setting-row">
+        <div class="setting-label">
+            <strong>{{ t('settings.language') }}</strong>
+        </div>
+        <div class="theme-switcher" id="lang-switcher">
+            <label id="lang-en">
+                <input type="radio" name="lang" value="en" {% if current_lang == 'en' %}checked{% endif %}>
+                <span>{{ t('settings.lang_en') }}</span>
+            </label>
+            <label id="lang-ru">
+                <input type="radio" name="lang" value="ru" {% if current_lang == 'ru' %}checked{% endif %}>
+                <span>{{ t('settings.lang_ru') }}</span>
+            </label>
+            <label id="lang-zh">
+                <input type="radio" name="lang" value="zh" {% if current_lang == 'zh' %}checked{% endif %}>
+                <span>{{ t('settings.lang_zh') }}</span>
+            </label>
+            <label id="lang-de">
+                <input type="radio" name="lang" value="de" {% if current_lang == 'de' %}checked{% endif %}>
+                <span>{{ t('settings.lang_de') }}</span>
+            </label>
+            <label id="lang-es">
+                <input type="radio" name="lang" value="es" {% if current_lang == 'es' %}checked{% endif %}>
+                <span>{{ t('settings.lang_es') }}</span>
+            </label>
+            <label id="lang-system">
+                <input type="radio" name="lang" value="system" {% if current_lang == 'system' %}checked{% endif %}>
+                <span>{{ t('settings.lang_system') }}</span>
+            </label>
+        </div>
+    </div>
+</article>
+
+<article>
+    <header>{{ t('settings.about') }}</header>
     <img src="/static/hero-banner.jpg" alt="OpenOcto" style="width: 50%; max-width: 400px; border-radius: 0.5rem; margin-bottom: 1rem; display: block;">
     <table>
-        <tr><td><strong>Version</strong></td><td>{{ version }}</td></tr>
-        <tr><td><strong>License</strong></td><td><a href="/legal/license">BSL 1.1</a></td></tr>
-        <tr><td><strong>Website</strong></td><td><a href="https://openocto.dev" target="_blank">openocto.dev</a></td></tr>
-        <tr><td><strong>GitHub</strong></td><td><a href="https://github.com/openocto-dev/openocto" target="_blank">openocto-dev/openocto</a></td></tr>
-        <tr><td><strong>Author</strong></td><td><a href="https://rocketdev.tech" target="_blank">Rocket Dev</a></td></tr>
+        <tr><td><strong>{{ t('settings.version') }}</strong></td><td>{{ version }}</td></tr>
+        <tr><td><strong>{{ t('settings.license') }}</strong></td><td><a href="/legal/license">BSL 1.1</a></td></tr>
+        <tr><td><strong>{{ t('settings.website') }}</strong></td><td><a href="https://openocto.dev" target="_blank">openocto.dev</a></td></tr>
+        <tr><td><strong>{{ t('settings.github') }}</strong></td><td><a href="https://github.com/openocto-dev/openocto" target="_blank">openocto-dev/openocto</a></td></tr>
+        <tr><td><strong>{{ t('settings.author') }}</strong></td><td><a href="https://rocketdev.tech" target="_blank">Rocket Dev</a></td></tr>
     </table>
 </article>
 
 <div class="btn-row">
-    <button class="outline contrast btn-inline" id="reset-settings-btn">Reset to defaults</button>
+    <button class="outline contrast btn-inline" id="reset-settings-btn">{{ t('settings.reset') }}</button>
 </div>
+<p><small>{{ t('settings.reset_desc') }}</small></p>
 {% endblock %}
 
 {% block scripts %}
@@ -163,6 +194,39 @@
         if (getSetting('oo-theme') === 'system') applyTheme('system');
     });
 
+    // ── Language switcher ───────────────────────────────────
+    document.querySelectorAll('#lang-switcher label').forEach(function(label) {
+        var radio = label.querySelector('input');
+        if (radio.checked) {
+            label.classList.add('selected');
+        }
+        label.addEventListener('click', function() {
+            document.querySelectorAll('#lang-switcher label').forEach(function(l) {
+                l.classList.remove('selected');
+            });
+            label.classList.add('selected');
+            radio.checked = true;
+
+            fetch('/api/settings/language', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ lang: radio.value }),
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.ok) {
+                    // Set cookie and reload to apply new language
+                    if (radio.value === 'system') {
+                        document.cookie = 'oo-lang=; max-age=0; path=/';
+                    } else {
+                        document.cookie = 'oo-lang=' + radio.value + '; max-age=31536000; path=/';
+                    }
+                    location.reload();
+                }
+            });
+        });
+    });
+
     // ── CSS variable settings ───────────────────────────────
     function applyCSSVar(cssVar, value) {
         document.documentElement.style.setProperty(cssVar, value);
@@ -191,6 +255,7 @@
         Object.keys(DEFAULTS).forEach(function(key) {
             localStorage.removeItem(key);
         });
+        document.cookie = 'oo-lang=; max-age=0; path=/';
         location.reload();
     });
 })();

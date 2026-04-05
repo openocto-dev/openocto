@@ -18,14 +18,14 @@
 {% endif %}
 
 <article>
-    <header>System Prompt</header>
+    <header>{{ t('persona.system_prompt') }}</header>
     <form method="POST" action="/api/personas/{{ persona.name }}/prompt">
         <p><small>File: <code>{{ prompt_path }}</code></small></p>
         <textarea name="content" rows="25"
                   style="font-family: monospace; font-size: 0.85em;">{{ system_prompt }}</textarea>
         <div class="btn-row">
-            <button type="submit" class="btn-inline">Save</button>
-            <a href="/personas" role="button" class="outline secondary btn-inline">Back</a>
+            <button type="submit" class="btn-inline">{{ t('persona.save') }}</button>
+            <a href="/personas" role="button" class="outline secondary btn-inline">{{ t('wiz.back') }}</a>
         </div>
     </form>
 </article>

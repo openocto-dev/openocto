@@ -1,19 +1,19 @@
 {% extends "base.html" %}
-{% block title %}Users — OpenOcto{% endblock %}
+{% block title %}{{ t('users.title') }} — OpenOcto{% endblock %}
 
 {% block content %}
-<h2>Users</h2>
+<h2>{{ t('users.title') }}</h2>
 
 {% if flash %}
 <div class="flash flash-{{ flash_type or 'success' }}">{{ flash }}</div>
 {% endif %}
 
 <article>
-    <header>Add User</header>
+    <header>{{ t('users.add_user') }}</header>
     <form method="POST" action="/api/users">
         <div class="inline-form">
-            <input type="text" name="name" placeholder="Username" required>
-            <button type="submit" class="btn-inline">Add</button>
+            <input type="text" name="name" placeholder="{{ t('users.name') }}" required>
+            <button type="submit" class="btn-inline">{{ t('users.add_user') }}</button>
         </div>
     </form>
 </article>
@@ -21,10 +21,10 @@
 <table>
     <thead>
         <tr>
-            <th>Name</th>
-            <th>Default</th>
-            <th>Active</th>
-            <th>Actions</th>
+            <th>{{ t('users.name') }}</th>
+            <th>{{ t('users.default') }}</th>
+            <th>{{ t('users.active') }}</th>
+            <th></th>
         </tr>
     </thead>
     <tbody>
@@ -33,34 +33,34 @@
             <td>{{ user.name }}</td>
             <td>
                 {% if user.is_default %}
-                    <span class="state-badge state-idle">default</span>
+                    <span class="state-badge state-idle">{{ t('users.default') }}</span>
                 {% else %}
                     <form method="POST" action="/api/users/{{ user.id }}/default" style="display:inline">
-                        <button type="submit" class="outline secondary btn-sm">Set default</button>
+                        <button type="submit" class="outline secondary btn-sm">{{ t('users.set_default') }}</button>
                     </form>
                 {% endif %}
             </td>
             <td>
                 {% if user.id == current_user_id %}
-                    <span class="state-badge state-recording">active</span>
+                    <span class="state-badge state-recording">{{ t('users.active') }}</span>
                 {% else %}
                     <form method="POST" action="/api/users/{{ user.id }}/activate" style="display:inline">
-                        <button type="submit" class="outline btn-sm">Switch</button>
+                        <button type="submit" class="outline btn-sm">{{ t('users.switch') }}</button>
                     </form>
                 {% endif %}
             </td>
             <td>
                 {% if user.id != current_user_id %}
                 <form method="POST" action="/api/users/{{ user.id }}/delete" style="display:inline"
-                      onsubmit="return confirm('Delete user {{ user.name }}? This removes all their data.')">
-                    <button type="submit" class="outline contrast btn-sm">Delete</button>
+                      onsubmit="return confirm('{{ t('users.confirm_delete') }}')">
+                    <button type="submit" class="outline contrast btn-sm">{{ t('users.delete') }}</button>
                 </form>
                 {% endif %}
             </td>
         </tr>
         {% endfor %}
         {% if not users %}
-        <tr><td colspan="4">No users yet.</td></tr>
+        <tr><td colspan="4">{{ t('users.no_users') }}</td></tr>
         {% endif %}
     </tbody>
 </table>

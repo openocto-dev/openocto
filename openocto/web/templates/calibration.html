@@ -1,26 +1,26 @@
 {% extends "base.html" %}
-{% block title %}Mic Calibration — OpenOcto{% endblock %}
+{% block title %}{{ t('cal.title') }} — OpenOcto{% endblock %}
 
 {% block content %}
-<h2>Microphone Calibration</h2>
-<p>Record silence and speech to find optimal VAD thresholds.</p>
+<h2>{{ t('cal.title') }}</h2>
+<p>{{ t('cal.desc') }}</p>
 
 <!-- Current values -->
 <details open>
-    <summary>Current Settings</summary>
+    <summary>{{ t('cal.current') }}</summary>
     <div class="card-grid" style="margin-top:1rem">
-        <div><small>Silero threshold</small><br><strong id="cur-threshold">{{ current.threshold }}</strong></div>
-        <div><small>RMS threshold</small><br><strong id="cur-rms">{{ current.rms_speech_threshold }}</strong></div>
-        <div><small>Silence duration</small><br><strong id="cur-silence">{{ current.silence_duration }}s</strong></div>
-        <div><small>Mic gain</small><br><strong id="cur-gain">{{ current.mic_gain or 'auto' }}</strong></div>
+        <div><small>{{ t('cal.silero_threshold') }}</small><br><strong id="cur-threshold">{{ current.threshold }}</strong></div>
+        <div><small>{{ t('cal.rms_threshold') }}</small><br><strong id="cur-rms">{{ current.rms_speech_threshold }}</strong></div>
+        <div><small>{{ t('cal.silence_duration') }}</small><br><strong id="cur-silence">{{ current.silence_duration }}s</strong></div>
+        <div><small>{{ t('cal.mic_gain') }}</small><br><strong id="cur-gain">{{ current.mic_gain or t('cal.auto') }}</strong></div>
     </div>
 </details>
 
 <!-- Step 1: Silence -->
 <article>
-    <h3>Step 1: Record Silence</h3>
-    <p>Click the button and <strong>stay quiet</strong> for 3 seconds.</p>
-    <button id="btn-silence" onclick="recordPhase('silence', 3)">Record Silence (3s)</button>
+    <h3>{{ t('cal.step1') }}</h3>
+    <p>{{ t('cal.step1_desc') }}</p>
+    <button id="btn-silence" onclick="recordPhase('silence', 3)">{{ t('cal.record_silence') }}</button>
     <div id="silence-status"></div>
     <canvas id="chart-silence" height="120" style="display:none; width:100%; margin-top:1rem;"></canvas>
     <div id="silence-stats" style="display:none; margin-top:0.5rem;"></div>
@@ -28,9 +28,9 @@
 
 <!-- Step 2: Speech -->
 <article>
-    <h3>Step 2: Record Speech</h3>
-    <p>Click the button and <strong>speak continuously</strong> for 5 seconds.</p>
-    <button id="btn-speech" onclick="recordPhase('speech', 5)">Record Speech (5s)</button>
+    <h3>{{ t('cal.step2') }}</h3>
+    <p>{{ t('cal.step2_desc') }}</p>
+    <button id="btn-speech" onclick="recordPhase('speech', 5)">{{ t('cal.record_speech') }}</button>
     <div id="speech-status"></div>
     <canvas id="chart-speech" height="120" style="display:none; width:100%; margin-top:1rem;"></canvas>
     <div id="speech-stats" style="display:none; margin-top:0.5rem;"></div>
@@ -38,18 +38,18 @@
 
 <!-- Step 3: Results -->
 <article id="results-section" style="display:none;">
-    <h3>Step 3: Recommended Settings</h3>
+    <h3>{{ t('cal.step3') }}</h3>
     <table>
-        <thead><tr><th>Parameter</th><th>Current</th><th>Recommended</th></tr></thead>
+        <thead><tr><th>{{ t('cal.parameter') }}</th><th>{{ t('cal.current_val') }}</th><th>{{ t('cal.recommended') }}</th></tr></thead>
         <tbody id="results-table"></tbody>
     </table>
     <details>
-        <summary>Analysis details</summary>
+        <summary>{{ t('cal.analysis') }}</summary>
         <pre id="analysis-details"></pre>
     </details>
     <div style="display:flex; gap:1rem; margin-top:1rem;">
-        <button id="btn-apply" onclick="applySettings()">Apply Recommended</button>
-        <button class="secondary" onclick="location.reload()">Reset</button>
+        <button id="btn-apply" onclick="applySettings()">{{ t('cal.apply') }}</button>
+        <button class="secondary" onclick="location.reload()">{{ t('cal.reset') }}</button>
     </div>
     <div id="save-status" style="margin-top:0.5rem;"></div>
 </article>
@@ -59,6 +59,14 @@
 <script>
 const data = { silence: null, speech: null };
 
+const I18N = {
+    recording: '{{ t("cal.recording") }}',
+    processing: '{{ t("cal.processing") }}',
+    recorded: '{{ t("cal.recorded") }}',
+    re_record: '{{ t("cal.re_record") }}',
+    saved: '{{ t("cal.saved") }}',
+};
+
 function recordPhase(phase, duration) {
     const btn = document.getElementById('btn-' + phase);
     const status = document.getElementById(phase + '-status');
@@ -67,16 +75,16 @@ function recordPhase(phase, duration) {
 
     btn.disabled = true;
     btn.setAttribute('aria-busy', 'true');
-    status.innerHTML = '<span class="rec-indicator"></span> <small>Recording ' + duration + 's...</small>';
+    status.innerHTML = '<span class="rec-indicator"></span> <small>' + I18N.recording + ' ' + duration + 's...</small>';
 
     // Countdown timer
     let remaining = duration;
     const timer = setInterval(() => {
         remaining--;
         if (remaining > 0) {
-            status.innerHTML = '<span class="rec-indicator"></span> <small>Recording ' + remaining + 's...</small>';
+            status.innerHTML = '<span class="rec-indicator"></span> <small>' + I18N.recording + ' ' + remaining + 's...</small>';
         } else {
-            status.innerHTML = '<span class="rec-indicator"></span> <small>Processing...</small>';
+            status.innerHTML = '<span class="rec-indicator"></span> <small>' + I18N.processing + '</small>';
             clearInterval(timer);
         }
     }, 1000);
@@ -91,10 +99,10 @@ function recordPhase(phase, duration) {
         clearInterval(timer);
         btn.disabled = false;
         btn.removeAttribute('aria-busy');
-        btn.textContent = 'Re-record ' + phase + ' (' + duration + 's)';
+        btn.textContent = I18N.re_record + ' (' + duration + 's)';
 
         data[phase] = result;
-        status.innerHTML = '<small style="color:var(--pico-ins-color)">Recorded!</small>';
+        status.innerHTML = '<small style="color:var(--pico-ins-color)">' + I18N.recorded + '</small>';
 
         // Draw chart
         canvas.style.display = 'block';
@@ -122,7 +130,7 @@ function recordPhase(phase, duration) {
         clearInterval(timer);
         btn.disabled = false;
         btn.removeAttribute('aria-busy');
-        status.innerHTML = '<small style="color:var(--pico-del-color)">Error: ' + err + '</small>';
+        status.innerHTML = '<small style="color:var(--pico-del-color)">{{ t("common.error") }}: ' + err + '</small>';
     });
 }
 
@@ -215,13 +223,13 @@ function applySettings() {
         btn.removeAttribute('aria-busy');
         const status = document.getElementById('save-status');
         if (result.ok) {
-            status.innerHTML = '<small style="color:var(--pico-ins-color)">Saved! Settings applied immediately (no restart needed).</small>';
+            status.innerHTML = '<small style="color:var(--pico-ins-color)">' + I18N.saved + '</small>';
             // Update displayed values
             document.getElementById('cur-rms').textContent = rec.rms_speech_threshold;
             document.getElementById('cur-threshold').textContent = rec.threshold;
             document.getElementById('cur-silence').textContent = rec.silence_duration + 's';
         } else {
-            status.innerHTML = '<small style="color:var(--pico-del-color)">Error: ' + (result.error || 'unknown') + '</small>';
+            status.innerHTML = '<small style="color:var(--pico-del-color)">{{ t("common.error") }}: ' + (result.error || 'unknown') + '</small>';
         }
     });
 }

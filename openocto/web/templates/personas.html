@@ -1,8 +1,8 @@
 {% extends "base.html" %}
-{% block title %}Personas — OpenOcto{% endblock %}
+{% block title %}{{ t('persona.title') }} — OpenOcto{% endblock %}
 
 {% block content %}
-<h2>Personas</h2>
+<h2>{{ t('persona.title') }}</h2>
 
 {% if flash %}
 <div class="flash flash-{{ flash_type or 'success' }}">{{ flash }}</div>
@@ -20,24 +20,24 @@
                 <div>
                     <strong>{{ p.display_name }}</strong>
                     {% if p.is_active %}
-                    <span class="state-badge state-idle">active</span>
+                    <span class="state-badge state-idle">{{ t('persona.active') }}</span>
                     {% endif %}
                 </div>
             </div>
         </header>
         <p>{{ p.description or 'No description' }}</p>
         <footer>
-            <a href="/personas/{{ p.name }}" role="button" class="outline btn-sm">Edit Prompt</a>
+            <a href="/personas/{{ p.name }}" role="button" class="outline btn-sm">{{ t('persona.edit_prompt') }}</a>
             {% if not p.is_active %}
             <form method="POST" action="/api/personas/{{ p.name }}/activate" style="display:inline">
-                <button type="submit" class="outline secondary btn-sm">Activate</button>
+                <button type="submit" class="outline secondary btn-sm">{{ t('persona.activate') }}</button>
             </form>
             {% endif %}
         </footer>
     </article>
     {% endfor %}
     {% if not personas %}
-    <p>No personas found. Add persona directories to <code>personas/</code>.</p>
+    <p>{{ t('persona.no_personas') }}</p>
     {% endif %}
 </div>
 {% endblock %}

@@ -10,6 +10,7 @@ import jinja2
 from aiohttp import web
 
 from openocto.config import USER_CONFIG_PATH
+from openocto.web.i18n import detect_language, get_translator
 
 if TYPE_CHECKING:
     from openocto.app import OpenOctoApp
@@ -41,17 +42,38 @@ async def first_run_redirect(
     return await handler(request)
 
 
+@web.middleware
+async def i18n_middleware(
+    request: web.Request,
+    handler: web.RequestHandler,
+) -> web.StreamResponse:
+    """Detect language and inject t() translator into request."""
+    lang = detect_language(request)
+    request["lang"] = lang
+    request["t"] = get_translator(lang)
+    return await handler(request)
+
+
+async def _i18n_context(request: web.Request) -> dict:
+    """Jinja2 context processor — makes t() and lang available in all templates."""
+    return {
+        "t": request.get("t", get_translator("en")),
+        "lang": request.get("lang", "en"),
+    }
+
+
 def create_web_app(octo_app: OpenOctoApp) -> web.Application:
     """Create and configure the aiohttp web application."""
-    app = web.Application(middlewares=[first_run_redirect])
+    app = web.Application(middlewares=[first_run_redirect, i18n_middleware])
 
     # Attach the OpenOcto app instance for access from route handlers
     app["octo"] = octo_app
 
-    # Jinja2 templates
+    # Jinja2 templates with i18n context processor
     aiohttp_jinja2.setup(
         app,
         loader=jinja2.FileSystemLoader(str(_TEMPLATES_DIR)),
+        context_processors=[_i18n_context, aiohttp_jinja2.request_processor],
     )
 
     # Static files

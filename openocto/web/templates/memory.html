@@ -1,8 +1,8 @@
 {% extends "base.html" %}
-{% block title %}Memory — OpenOcto{% endblock %}
+{% block title %}{{ t('mem.title') }} — OpenOcto{% endblock %}
 
 {% block content %}
-<h2>Memory</h2>
+<h2>{{ t('mem.title') }}</h2>
 
 {% if flash %}
 <div class="flash flash-{{ flash_type or 'success' }}">{{ flash }}</div>
@@ -12,11 +12,11 @@
 <p>No active user. <a href="/users">Select a user</a> first.</p>
 {% else %}
 
-<h3>User Facts</h3>
+<h3>{{ t('mem.facts') }}</h3>
 <p><small>Long-term knowledge about the user (persists across all personas)</small></p>
 
 <article>
-    <header>Add Fact</header>
+    <header>{{ t('mem.add_fact') }}</header>
     <form method="POST" action="/api/memory/facts">
         <div class="inline-form">
             <input type="text" name="fact" placeholder="e.g. Prefers formal responses" required style="flex: 2">
@@ -26,7 +26,7 @@
                 <option value="work">Work</option>
                 <option value="communication_style">Communication Style</option>
             </select>
-            <button type="submit" class="btn-inline">Add</button>
+            <button type="submit" class="btn-inline">{{ t('mem.add_fact') }}</button>
         </div>
     </form>
 </article>
@@ -36,9 +36,9 @@
     <thead>
         <tr>
             <th>Fact</th>
-            <th>Category</th>
-            <th>Source</th>
-            <th>Actions</th>
+            <th>{{ t('mem.category') }}</th>
+            <th>{{ t('mem.source') }}</th>
+            <th></th>
         </tr>
     </thead>
     <tbody>
@@ -49,7 +49,7 @@
             <td><small>{{ f.source }}</small></td>
             <td>
                 <form method="POST" action="/api/memory/facts/{{ f.id }}/delete" style="display:inline">
-                    <button type="submit" class="outline contrast btn-sm">Remove</button>
+                    <button type="submit" class="outline contrast btn-sm">{{ t('mem.delete') }}</button>
                 </form>
             </td>
         </tr>
@@ -57,12 +57,12 @@
     </tbody>
 </table>
 {% else %}
-<p><small>No facts recorded yet. Facts are extracted automatically from conversations or can be added manually above.</small></p>
+<p><small>{{ t('mem.no_facts') }}</small></p>
 {% endif %}
 
 <hr>
 
-<h3>Conversation Notes</h3>
+<h3>{{ t('mem.notes') }}</h3>
 <p><small>Short-term notes for persona "{{ persona }}" (auto-expire after 14 days)</small></p>
 
 {% if notes %}
@@ -70,9 +70,9 @@
     <thead>
         <tr>
             <th>Note</th>
-            <th>Category</th>
+            <th>{{ t('mem.category') }}</th>
             <th>Created</th>
-            <th>Actions</th>
+            <th></th>
         </tr>
     </thead>
     <tbody>
@@ -83,7 +83,7 @@
             <td><small>{{ n.created_at }}</small></td>
             <td>
                 <form method="POST" action="/api/memory/notes/{{ n.id }}/resolve" style="display:inline">
-                    <button type="submit" class="outline secondary btn-sm">Resolve</button>
+                    <button type="submit" class="outline secondary btn-sm">{{ t('mem.resolve') }}</button>
                 </form>
             </td>
         </tr>
@@ -91,12 +91,12 @@
     </tbody>
 </table>
 {% else %}
-<p><small>No active notes. Notes are created automatically during conversations.</small></p>
+<p><small>{{ t('mem.no_notes') }}</small></p>
 {% endif %}
 
 <hr>
 
-<h3>Latest Summary</h3>
+<h3>{{ t('mem.summaries') }}</h3>
 <p><small>Compressed conversation history for persona "{{ persona }}"</small></p>
 
 {% if summary %}
@@ -107,7 +107,7 @@
     <pre style="white-space: pre-wrap; font-size: 0.85em;">{{ summary.summary }}</pre>
 </article>
 {% else %}
-<p><small>No summary generated yet. Summaries are created automatically when conversation history grows large.</small></p>
+<p><small>{{ t('mem.no_summaries') }}</small></p>
 {% endif %}
 
 {% endif %}

@@ -636,8 +636,8 @@ body {
 }
 .stat-num-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 1rem;
+    grid-template-columns: 1fr;
+    gap: 0.6rem;
 }
 .stat-num-item {
     display: flex;
@@ -665,10 +665,21 @@ body {
     line-height: 1;
 }
 .stat-num-label {
-    font-size: 0.7rem;
+    font-size: 0.6rem;
     color: var(--pico-muted-color);
     text-transform: uppercase;
-    letter-spacing: 0.03em;
+    letter-spacing: 0.02em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.stat-num-item {
+    min-width: 0;    /* allow flex children to shrink below content size */
+}
+
+.stat-num-item > div:last-child {
+    min-width: 0;    /* allow label text to truncate */
 }
 
 /* Storage bars */
@@ -1409,6 +1420,7 @@ body {
     border-radius: var(--pico-border-radius);
     cursor: pointer;
     font-size: 0.9rem;
+    white-space: nowrap;
     transition: border-color 0.15s, background 0.15s;
 }
 

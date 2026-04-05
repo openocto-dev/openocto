@@ -1,8 +1,8 @@
 {% extends "base.html" %}
-{% block title %}Dashboard — OpenOcto{% endblock %}
+{% block title %}{{ t('dash.title') }} — OpenOcto{% endblock %}
 
 {% block content %}
-<h2>Dashboard</h2>
+<h2>{{ t('dash.title') }}</h2>
 
 <!-- ── Status cards ── -->
 <div class="card-grid">
@@ -13,7 +13,7 @@
             </svg>
         </div>
         <div class="dash-card-body">
-            <div class="dash-card-label">Pipeline State</div>
+            <div class="dash-card-label">{{ t('dash.pipeline_state') }}</div>
             <div class="dash-card-value">
                 <span id="state-badge" class="state-badge state-{{ state }}">{{ state }}</span>
             </div>
@@ -29,7 +29,7 @@
                 </svg>
             </div>
             <div class="dash-card-body">
-                <div class="dash-card-label">Active User</div>
+                <div class="dash-card-label">{{ t('dash.active_user') }}</div>
                 <div class="dash-card-value">{{ user_name }}</div>
             </div>
             <div class="dash-card-arrow">
@@ -46,7 +46,7 @@
                      onerror="this.style.display='none'; this.parentElement.classList.remove('has-img'); this.parentElement.textContent='{{ persona_name[:1] }}';">
             </div>
             <div class="dash-card-body">
-                <div class="dash-card-label">Persona</div>
+                <div class="dash-card-label">{{ t('dash.persona') }}</div>
                 <div class="dash-card-value">{{ persona_name }}</div>
             </div>
             <div class="dash-card-arrow">
@@ -65,7 +65,7 @@
                 </svg>
             </div>
             <div class="dash-card-body">
-                <div class="dash-card-label">AI Backend</div>
+                <div class="dash-card-label">{{ t('dash.ai_backend') }}</div>
                 <div class="dash-card-value">{{ backend }}</div>
             </div>
             <div class="dash-card-arrow">
@@ -76,7 +76,7 @@
 </div>
 
 <!-- ── Statistics ── -->
-<h3 style="margin-top: 2rem;">Statistics</h3>
+<h3 style="margin-top: 2rem;">{{ t('dash.statistics') }}</h3>
 
 <div class="stats-grid">
     <!-- Ring: messages breakdown -->
@@ -98,12 +98,12 @@
                 <span class="stat-ring-number">{{ stats.total_messages }}</span>
             </div>
         </div>
-        <div class="stat-card-label">Messages</div>
+        <div class="stat-card-label">{{ t('dash.messages') }}</div>
         <div class="stat-ring-legend">
             <span class="stat-legend-dot" style="background: var(--oo-teal);"></span>
-            <span>You: {{ stats.user_messages }}</span>
+            <span>{{ t('dash.you') }}: {{ stats.user_messages }}</span>
             <span class="stat-legend-dot" style="background: var(--oo-coral);"></span>
-            <span>AI: {{ stats.assistant_messages }}</span>
+            <span>{{ t('dash.ai') }}: {{ stats.assistant_messages }}</span>
         </div>
     </article>
 
@@ -132,12 +132,12 @@
                 <span class="stat-ring-number">{{ mem_total }}</span>
             </div>
         </div>
-        <div class="stat-card-label">Memory</div>
+        <div class="stat-card-label">{{ t('dash.memory') }}</div>
         <div class="stat-ring-legend">
             <span class="stat-legend-dot" style="background: var(--oo-teal);"></span>
-            <span>Facts: {{ stats.fact_count }}</span>
+            <span>{{ t('dash.facts') }}: {{ stats.fact_count }}</span>
             <span class="stat-legend-dot" style="background: var(--oo-coral);"></span>
-            <span>Notes: {{ stats.note_count }}</span>
+            <span>{{ t('dash.notes') }}: {{ stats.note_count }}</span>
         </div>
     </article>
 
@@ -149,14 +149,14 @@
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
                 </div>
                 <div class="stat-num-val">{{ stats.total_users }}</div>
-                <div class="stat-num-label">Users</div>
+                <div class="stat-num-label">{{ t('dash.users') }}</div>
             </div>
             <div class="stat-num-item">
                 <div class="stat-num-circle">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2C6.48 2 2 6 2 10.5c0 2 .8 3.8 2 5.2V22l4-2.5c1.2.5 2.6.8 4 .8 5.52 0 10-4 10-8.5S17.52 2 12 2z"/></svg>
                 </div>
                 <div class="stat-num-val">{{ stats.persona_count }}</div>
-                <div class="stat-num-label">Personas</div>
+                <div class="stat-num-label">{{ t('dash.personas') }}</div>
             </div>
             <div class="stat-num-item">
                 <div class="stat-num-circle">
@@ -170,7 +170,7 @@
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
                 </div>
                 <div class="stat-num-val">{{ stats.tts_langs | length }}</div>
-                <div class="stat-num-label">TTS Langs</div>
+                <div class="stat-num-label">{{ t('dash.tts_langs') }}</div>
             </div>
         </div>
     </article>
@@ -181,7 +181,7 @@
             <div class="stat-storage-row">
                 <span class="stat-storage-label">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
-                    Database
+                    {{ t('dash.db_size') }}
                 </span>
                 <span class="stat-storage-val">{{ stats.db_size }} MB</span>
             </div>
@@ -191,7 +191,7 @@
             <div class="stat-storage-row">
                 <span class="stat-storage-label">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
-                    Models
+                    {{ t('dash.models_size') }}
                 </span>
                 <span class="stat-storage-val">{{ stats.models_size }} MB</span>
             </div>
@@ -201,7 +201,7 @@
         </div>
 
         {% if stats.daily_counts %}
-        <div class="stat-chart-label">Messages (last 7 days)</div>
+        <div class="stat-chart-label">{{ t('dash.activity') }}</div>
         <div class="stat-bar-chart" id="daily-chart">
             {% set max_count = stats.daily_counts | map(attribute='count') | max %}
             {% for d in stats.daily_counts %}
@@ -219,15 +219,15 @@
 <div class="stat-features">
     <span class="stat-feat {{ 'stat-feat-on' if stats.memory_on else 'stat-feat-off' }}">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
-        Memory {{ 'ON' if stats.memory_on else 'OFF' }}
+        {{ t('dash.memory_sys') }} {{ t('dash.on') if stats.memory_on else t('dash.off') }}
     </span>
     <span class="stat-feat {{ 'stat-feat-on' if stats.wakeword_on else 'stat-feat-off' }}">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-        Wake Word {{ 'ON' if stats.wakeword_on else 'OFF' }}
+        {{ t('dash.wakeword') }} {{ t('dash.on') if stats.wakeword_on else t('dash.off') }}
     </span>
     <span class="stat-feat stat-feat-on">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
-        STT: {{ stats.stt_model }}
+        {{ t('dash.stt') }}: {{ stats.stt_model }}
     </span>
     {% for lang in stats.tts_langs %}
     <span class="stat-feat stat-feat-on">

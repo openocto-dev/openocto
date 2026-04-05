@@ -26,11 +26,20 @@ def _make_mock_octo_app() -> MagicMock:
     mock._history_store.list_users.return_value = [
         {"id": 1, "name": "TestUser", "is_default": True}
     ]
+    mock._history_store.get_active_facts.return_value = []
+    mock._history_store.get_active_notes.return_value = []
+    # Make _conn.execute return proper dict-like rows
+    mock._history_store._conn.execute.return_value.fetchone.return_value = {"cnt": 0}
+    mock._history_store._conn.execute.return_value.fetchall.return_value = []
     mock._current_user_id = 1
     mock._persona = MagicMock()
     mock._persona.display_name = "Octo"
+    mock._persona.name = "octo"
+    mock._persona_manager = MagicMock()
+    mock._persona_manager.list_personas.return_value = []
     mock._memory = None
     mock._ai_router = MagicMock()
+    mock._tts_engines = {}
     return mock
 
 

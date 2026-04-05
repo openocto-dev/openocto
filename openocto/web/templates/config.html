@@ -1,8 +1,8 @@
 {% extends "base.html" %}
-{% block title %}Config — OpenOcto{% endblock %}
+{% block title %}{{ t('cfg.title') }} — OpenOcto{% endblock %}
 
 {% block content %}
-<h2>Configuration</h2>
+<h2>{{ t('cfg.title') }}</h2>
 
 {% if flash %}
 <div class="flash flash-{{ flash_type or 'success' }}">{{ flash }}</div>
@@ -38,7 +38,7 @@
             </label>
         </div>
         <div class="config-actions">
-            <button type="submit" class="btn-inline btn-sm">Save</button>
+            <button type="submit" class="btn-inline btn-sm">{{ t('cfg.save') }}</button>
         </div>
     </form>
 </article>
@@ -122,9 +122,9 @@
             {% endfor %}
         </div>
         <div class="config-actions">
-            <button type="submit" class="btn-inline btn-sm">Save</button>
-            <button type="button" class="outline secondary btn-sm config-cancel" data-target="section-{{ key }}">Cancel</button>
-            <small class="config-hint">Changes require restart to take effect.</small>
+            <button type="submit" class="btn-inline btn-sm">{{ t('cfg.save') }}</button>
+            <button type="button" class="outline secondary btn-sm config-cancel" data-target="section-{{ key }}">{{ t('common.cancel') }}</button>
+            <small class="config-hint">{{ t('cfg.restart_needed') }}</small>
         </div>
     </form>
 </article>
@@ -138,8 +138,8 @@
             <textarea name="content" rows="20" id="config-editor"
                       style="font-family: monospace; font-size: 0.85em;"></textarea>
             <div class="config-actions">
-                <button type="submit" class="btn-inline btn-sm">Save YAML</button>
-                <small class="config-hint">Changes require restart to take effect.</small>
+                <button type="submit" class="btn-inline btn-sm">{{ t('cfg.save') }} YAML</button>
+                <small class="config-hint">{{ t('cfg.restart_needed') }}</small>
             </div>
         </form>
     </article>
@@ -158,7 +158,7 @@
             if (target.style.display === 'none') {
                 target.style.display = '';
                 if (summary) summary.style.display = 'none';
-                btn.textContent = 'Cancel';
+                btn.textContent = '{{ t("common.cancel") }}';
                 btn.classList.remove('secondary');
             } else {
                 target.style.display = 'none';
