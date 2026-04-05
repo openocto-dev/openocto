@@ -75,9 +75,12 @@ def web(host: str, port: int) -> None:
         config.web.host = host
         config.web.port = port
 
+        from openocto.persona.manager import PersonaManager
+
         event_bus = EventBus()
         state_machine = StateMachine(event_bus)
         history_store = HistoryStore()
+        persona_manager = PersonaManager()
 
         # Minimal app context for web routes
         octo = SimpleNamespace(
@@ -85,6 +88,7 @@ def web(host: str, port: int) -> None:
             _event_bus=event_bus,
             _state_machine=state_machine,
             _history_store=history_store,
+            _persona_manager=persona_manager,
             _current_user_id=None,
             _persona=None,
             _memory=None,
@@ -96,6 +100,12 @@ def web(host: str, port: int) -> None:
         if users:
             default = next((u for u in users if u["is_default"]), users[0])
             octo._current_user_id = default["id"]
+
+        # Activate default persona
+        try:
+            octo._persona = persona_manager.activate(config.persona)
+        except (ValueError, KeyError):
+            pass
 
         app = create_web_app(octo)
         runner = aio_web.AppRunner(app)

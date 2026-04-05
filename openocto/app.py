@@ -292,10 +292,13 @@ class OpenOctoApp:
                     break
 
                 secs = int(elapsed)
+                vad_info = ""
+                if self._vad and hasattr(self._vad, "last_prob"):
+                    vad_info = f" p={self._vad.last_prob:.2f} r={getattr(self._vad, 'last_rms', 0):.0f}"
                 if speech_detected:
-                    print(f"\U0001f3a4 Recording... {secs}s ", end="\r", flush=True)
+                    print(f"\U0001f3a4 Recording... {secs}s{vad_info} ", end="\r", flush=True)
                 else:
-                    print(f"\U0001f3a4 Listening... {secs}s ", end="\r", flush=True)
+                    print(f"\U0001f3a4 Listening... {secs}s{vad_info} ", end="\r", flush=True)
 
                 # Feed new audio chunks to the ONNX VAD
                 while True:
@@ -322,6 +325,14 @@ class OpenOctoApp:
         print(" " * 60, end="\r")
 
         if audio.size == 0:
+            await self._state_machine.transition("cancel")
+            return None
+
+        # Reject recordings that are too quiet (likely false VAD trigger on noise)
+        rms = float(np.sqrt(np.mean(audio.astype(np.float32) ** 2)))
+        if rms < self._config.vad.rms_speech_threshold:
+            logger.debug("Rejecting recording: RMS %.0f < threshold %d",
+                         rms, self._config.vad.rms_speech_threshold)
             await self._state_machine.transition("cancel")
             return None
 

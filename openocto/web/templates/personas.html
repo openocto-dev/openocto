@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Personas — OpenOcto{% endblock %}
+
+{% block content %}
+<h2>Personas</h2>
+
+{% if flash %}
+<div class="flash flash-{{ flash_type or 'success' }}">{{ flash }}</div>
+{% endif %}
+
+<div class="card-grid">
+    {% for p in personas %}
+    <article class="persona-card">
+        <header>
+            <div class="persona-header">
+                <img src="/static/avatars/{{ p.name }}.png"
+                     alt="{{ p.display_name }}"
+                     class="persona-avatar"
+                     onerror="this.style.display='none'">
+                <div>
+                    <strong>{{ p.display_name }}</strong>
+                    {% if p.is_active %}
+                    <span class="state-badge state-idle">active</span>
+                    {% endif %}
+                </div>
+            </div>
+        </header>
+        <p>{{ p.description or 'No description' }}</p>
+        <footer>
+            <a href="/personas/{{ p.name }}" role="button" class="outline btn-sm">Edit Prompt</a>
+            {% if not p.is_active %}
+            <form method="POST" action="/api/personas/{{ p.name }}/activate" style="display:inline">
+                <button type="submit" class="outline secondary btn-sm">Activate</button>
+            </form>
+            {% endif %}
+        </footer>
+    </article>
+    {% endfor %}
+    {% if not personas %}
+    <p>No personas found. Add persona directories to <code>personas/</code>.</p>
+    {% endif %}
+</div>
+{% endblock %}

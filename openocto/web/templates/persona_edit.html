@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}{{ persona.display_name }} — OpenOcto{% endblock %}
+
+{% block content %}
+<div class="persona-header-large">
+    <img src="/static/avatars/{{ persona.name }}.png"
+         alt="{{ persona.display_name }}"
+         class="persona-avatar-lg"
+         onerror="this.style.display='none'">
+    <div>
+        <h2 style="margin-bottom: 0.25rem;">{{ persona.display_name }}</h2>
+        <p>{{ persona.description or '' }}</p>
+    </div>
+</div>
+
+{% if flash %}
+<div class="flash flash-{{ flash_type or 'success' }}">{{ flash }}</div>
+{% endif %}
+
+<article>
+    <header>System Prompt</header>
+    <form method="POST" action="/api/personas/{{ persona.name }}/prompt">
+        <p><small>File: <code>{{ prompt_path }}</code></small></p>
+        <textarea name="content" rows="25"
+                  style="font-family: monospace; font-size: 0.85em;">{{ system_prompt }}</textarea>
+        <div class="btn-row">
+            <button type="submit" class="btn-inline">Save</button>
+            <a href="/personas" role="button" class="outline secondary btn-inline">Back</a>
+        </div>
+    </form>
+</article>
+{% endblock %}

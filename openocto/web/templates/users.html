@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Users — OpenOcto{% endblock %}
+
+{% block content %}
+<h2>Users</h2>
+
+{% if flash %}
+<div class="flash flash-{{ flash_type or 'success' }}">{{ flash }}</div>
+{% endif %}
+
+<article>
+    <header>Add User</header>
+    <form method="POST" action="/api/users">
+        <div class="inline-form">
+            <input type="text" name="name" placeholder="Username" required>
+            <button type="submit" class="btn-inline">Add</button>
+        </div>
+    </form>
+</article>
+
+<table>
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>Default</th>
+            <th>Active</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for user in users %}
+        <tr>
+            <td>{{ user.name }}</td>
+            <td>
+                {% if user.is_default %}
+                    <span class="state-badge state-idle">default</span>
+                {% else %}
+                    <form method="POST" action="/api/users/{{ user.id }}/default" style="display:inline">
+                        <button type="submit" class="outline secondary btn-sm">Set default</button>
+                    </form>
+                {% endif %}
+            </td>
+            <td>
+                {% if user.id == current_user_id %}
+                    <span class="state-badge state-recording">active</span>
+                {% else %}
+                    <form method="POST" action="/api/users/{{ user.id }}/activate" style="display:inline">
+                        <button type="submit" class="outline btn-sm">Switch</button>
+                    </form>
+                {% endif %}
+            </td>
+            <td>
+                {% if user.id != current_user_id %}
+                <form method="POST" action="/api/users/{{ user.id }}/delete" style="display:inline"
+                      onsubmit="return confirm('Delete user {{ user.name }}? This removes all their data.')">
+                    <button type="submit" class="outline contrast btn-sm">Delete</button>
+                </form>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+        {% if not users %}
+        <tr><td colspan="4">No users yet.</td></tr>
+        {% endif %}
+    </tbody>
+</table>
+{% endblock %}

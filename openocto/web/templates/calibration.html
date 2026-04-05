@@ -1,0 +1,229 @@
+{% extends "base.html" %}
+{% block title %}Mic Calibration — OpenOcto{% endblock %}
+
+{% block content %}
+<h2>Microphone Calibration</h2>
+<p>Record silence and speech to find optimal VAD thresholds.</p>
+
+<!-- Current values -->
+<details open>
+    <summary>Current Settings</summary>
+    <div class="card-grid" style="margin-top:1rem">
+        <div><small>Silero threshold</small><br><strong id="cur-threshold">{{ current.threshold }}</strong></div>
+        <div><small>RMS threshold</small><br><strong id="cur-rms">{{ current.rms_speech_threshold }}</strong></div>
+        <div><small>Silence duration</small><br><strong id="cur-silence">{{ current.silence_duration }}s</strong></div>
+        <div><small>Mic gain</small><br><strong id="cur-gain">{{ current.mic_gain or 'auto' }}</strong></div>
+    </div>
+</details>
+
+<!-- Step 1: Silence -->
+<article>
+    <h3>Step 1: Record Silence</h3>
+    <p>Click the button and <strong>stay quiet</strong> for 3 seconds.</p>
+    <button id="btn-silence" onclick="recordPhase('silence', 3)">Record Silence (3s)</button>
+    <div id="silence-status"></div>
+    <canvas id="chart-silence" height="120" style="display:none; width:100%; margin-top:1rem;"></canvas>
+    <div id="silence-stats" style="display:none; margin-top:0.5rem;"></div>
+</article>
+
+<!-- Step 2: Speech -->
+<article>
+    <h3>Step 2: Record Speech</h3>
+    <p>Click the button and <strong>speak continuously</strong> for 5 seconds.</p>
+    <button id="btn-speech" onclick="recordPhase('speech', 5)">Record Speech (5s)</button>
+    <div id="speech-status"></div>
+    <canvas id="chart-speech" height="120" style="display:none; width:100%; margin-top:1rem;"></canvas>
+    <div id="speech-stats" style="display:none; margin-top:0.5rem;"></div>
+</article>
+
+<!-- Step 3: Results -->
+<article id="results-section" style="display:none;">
+    <h3>Step 3: Recommended Settings</h3>
+    <table>
+        <thead><tr><th>Parameter</th><th>Current</th><th>Recommended</th></tr></thead>
+        <tbody id="results-table"></tbody>
+    </table>
+    <details>
+        <summary>Analysis details</summary>
+        <pre id="analysis-details"></pre>
+    </details>
+    <div style="display:flex; gap:1rem; margin-top:1rem;">
+        <button id="btn-apply" onclick="applySettings()">Apply Recommended</button>
+        <button class="secondary" onclick="location.reload()">Reset</button>
+    </div>
+    <div id="save-status" style="margin-top:0.5rem;"></div>
+</article>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const data = { silence: null, speech: null };
+
+function recordPhase(phase, duration) {
+    const btn = document.getElementById('btn-' + phase);
+    const status = document.getElementById(phase + '-status');
+    const canvas = document.getElementById('chart-' + phase);
+    const statsDiv = document.getElementById(phase + '-stats');
+
+    btn.disabled = true;
+    btn.setAttribute('aria-busy', 'true');
+    status.innerHTML = '<span class="rec-indicator"></span> <small>Recording ' + duration + 's...</small>';
+
+    // Countdown timer
+    let remaining = duration;
+    const timer = setInterval(() => {
+        remaining--;
+        if (remaining > 0) {
+            status.innerHTML = '<span class="rec-indicator"></span> <small>Recording ' + remaining + 's...</small>';
+        } else {
+            status.innerHTML = '<span class="rec-indicator"></span> <small>Processing...</small>';
+            clearInterval(timer);
+        }
+    }, 1000);
+
+    fetch('/api/calibration/record', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ duration: duration }),
+    })
+    .then(r => r.json())
+    .then(result => {
+        clearInterval(timer);
+        btn.disabled = false;
+        btn.removeAttribute('aria-busy');
+        btn.textContent = 'Re-record ' + phase + ' (' + duration + 's)';
+
+        data[phase] = result;
+        status.innerHTML = '<small style="color:var(--pico-ins-color)">Recorded!</small>';
+
+        // Draw chart
+        canvas.style.display = 'block';
+        drawChart(canvas, result.chunks, phase);
+
+        // Show stats
+        const s = result.stats;
+        statsDiv.style.display = 'block';
+        statsDiv.innerHTML =
+            '<small>RMS: mean=' + s.rms_mean + ' p95=' + s.rms_p95 + ' p99=' + s.rms_p99 + ' max=' + s.rms_max +
+            ' | Prob: mean=' + s.prob_mean + ' max=' + s.prob_max + '</small>';
+
+        // Add p25 for speech
+        if (phase === 'speech') {
+            const rms_vals = result.chunks.map(c => c.rms).sort((a,b) => a-b);
+            result.stats.rms_p25 = rms_vals[Math.floor(rms_vals.length * 0.25)];
+        }
+
+        // If both recorded, show recommendations
+        if (data.silence && data.speech) {
+            analyze();
+        }
+    })
+    .catch(err => {
+        clearInterval(timer);
+        btn.disabled = false;
+        btn.removeAttribute('aria-busy');
+        status.innerHTML = '<small style="color:var(--pico-del-color)">Error: ' + err + '</small>';
+    });
+}
+
+function drawChart(canvas, chunks, phase) {
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width = canvas.offsetWidth * (window.devicePixelRatio || 1);
+    const H = canvas.height = 120 * (window.devicePixelRatio || 1);
+    canvas.style.height = '120px';
+    ctx.scale(window.devicePixelRatio || 1, window.devicePixelRatio || 1);
+    const w = canvas.offsetWidth;
+    const h = 120;
+
+    ctx.clearRect(0, 0, w, h);
+
+    const maxRms = Math.max(...chunks.map(c => c.rms), 1);
+    const barW = w / chunks.length;
+
+    // RMS bars
+    chunks.forEach((c, i) => {
+        const barH = (c.rms / maxRms) * (h - 20);
+        const hue = c.prob > 0.3 ? 120 : (c.rms > 2000 ? 30 : 200);  // green=speech, orange=rms-only, blue=quiet
+        ctx.fillStyle = 'hsla(' + hue + ', 70%, 50%, 0.7)';
+        ctx.fillRect(i * barW, h - 20 - barH, Math.max(barW - 1, 1), barH);
+    });
+
+    // Prob line
+    ctx.strokeStyle = '#e8614d';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    chunks.forEach((c, i) => {
+        const x = i * barW + barW / 2;
+        const y = h - 20 - (c.prob * (h - 20));
+        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+
+    // Legend
+    ctx.font = '11px system-ui';
+    ctx.fillStyle = '#8892a4';
+    ctx.fillText('RMS (bars) | Silero prob (red line) | max RMS: ' + maxRms, 4, h - 4);
+}
+
+function analyze() {
+    fetch('/api/calibration/analyze', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            silence: data.silence.stats,
+            speech: data.speech.stats,
+        }),
+    })
+    .then(r => r.json())
+    .then(result => {
+        const section = document.getElementById('results-section');
+        section.style.display = 'block';
+
+        const rec = result.recommended;
+        const tbody = document.getElementById('results-table');
+        tbody.innerHTML = [
+            ['rms_speech_threshold', document.getElementById('cur-rms').textContent, rec.rms_speech_threshold],
+            ['threshold (Silero)', document.getElementById('cur-threshold').textContent, rec.threshold],
+            ['silence_duration', document.getElementById('cur-silence').textContent.replace('s',''), rec.silence_duration + 's'],
+        ].map(([k,cur,r]) =>
+            '<tr><td>' + k + '</td><td>' + cur + '</td><td><strong>' + r + '</strong></td></tr>'
+        ).join('');
+
+        document.getElementById('analysis-details').textContent = JSON.stringify(result.analysis, null, 2);
+
+        // Store for apply
+        window._recommended = rec;
+    });
+}
+
+function applySettings() {
+    const rec = window._recommended;
+    if (!rec) return;
+
+    const btn = document.getElementById('btn-apply');
+    btn.disabled = true;
+    btn.setAttribute('aria-busy', 'true');
+
+    fetch('/api/calibration/save', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(rec),
+    })
+    .then(r => r.json())
+    .then(result => {
+        btn.disabled = false;
+        btn.removeAttribute('aria-busy');
+        const status = document.getElementById('save-status');
+        if (result.ok) {
+            status.innerHTML = '<small style="color:var(--pico-ins-color)">Saved! Settings applied immediately (no restart needed).</small>';
+            // Update displayed values
+            document.getElementById('cur-rms').textContent = rec.rms_speech_threshold;
+            document.getElementById('cur-threshold').textContent = rec.threshold;
+            document.getElementById('cur-silence').textContent = rec.silence_duration + 's';
+        } else {
+            status.innerHTML = '<small style="color:var(--pico-del-color)">Error: ' + (result.error || 'unknown') + '</small>';
+        }
+    });
+}
+</script>
+{% endblock %}

@@ -1,0 +1,198 @@
+{% extends "base.html" %}
+{% block title %}Settings — OpenOcto{% endblock %}
+
+{% block content %}
+<h2>Settings</h2>
+<p><small>UI preferences are saved locally in your browser.</small></p>
+
+<article>
+    <header>Appearance</header>
+
+    <div class="setting-row">
+        <div class="setting-label">
+            <strong>Theme</strong>
+            <small>Choose how the admin panel looks</small>
+        </div>
+        <div class="theme-switcher" id="theme-switcher">
+            <label id="theme-light">
+                <input type="radio" name="theme" value="light">
+                <span>Light</span>
+            </label>
+            <label id="theme-dark">
+                <input type="radio" name="theme" value="dark">
+                <span>Dark</span>
+            </label>
+            <label id="theme-system">
+                <input type="radio" name="theme" value="system">
+                <span>System</span>
+            </label>
+        </div>
+    </div>
+
+    <div class="setting-row">
+        <div class="setting-label">
+            <strong>Font size</strong>
+            <small>Base font size for the interface</small>
+        </div>
+        <div class="setting-control">
+            <select id="setting-font-size">
+                <option value="12px">Small (12px)</option>
+                <option value="13px">Compact (13px)</option>
+                <option value="14px">Default (14px)</option>
+                <option value="15px">Medium (15px)</option>
+                <option value="16px">Large (16px)</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="setting-row">
+        <div class="setting-label">
+            <strong>Sidebar width</strong>
+            <small>Navigation panel width in pixels</small>
+        </div>
+        <div class="setting-control">
+            <select id="setting-sidebar-width">
+                <option value="180px">Narrow (180px)</option>
+                <option value="200px">Compact (200px)</option>
+                <option value="220px">Default (220px)</option>
+                <option value="260px">Wide (260px)</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="setting-row">
+        <div class="setting-label">
+            <strong>Content width</strong>
+            <small>Maximum width of the main content area</small>
+        </div>
+        <div class="setting-control">
+            <select id="setting-content-width">
+                <option value="800px">Narrow (800px)</option>
+                <option value="960px">Default (960px)</option>
+                <option value="1120px">Wide (1120px)</option>
+                <option value="100%">Full width</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="setting-row">
+        <div class="setting-label">
+            <strong>Control height</strong>
+            <small>Height of buttons, inputs, and selects</small>
+        </div>
+        <div class="setting-control">
+            <select id="setting-control-height">
+                <option value="36px">Compact (36px)</option>
+                <option value="40px">Small (40px)</option>
+                <option value="44px">Default (44px)</option>
+                <option value="48px">Large (48px)</option>
+            </select>
+        </div>
+    </div>
+</article>
+
+<article>
+    <header>About</header>
+    <img src="/static/hero-banner.jpg" alt="OpenOcto" style="width: 50%; max-width: 400px; border-radius: 0.5rem; margin-bottom: 1rem; display: block;">
+    <table>
+        <tr><td><strong>Version</strong></td><td>{{ version }}</td></tr>
+        <tr><td><strong>License</strong></td><td><a href="/legal/license">BSL 1.1</a></td></tr>
+        <tr><td><strong>Website</strong></td><td><a href="https://openocto.dev" target="_blank">openocto.dev</a></td></tr>
+        <tr><td><strong>GitHub</strong></td><td><a href="https://github.com/openocto-dev/openocto" target="_blank">openocto-dev/openocto</a></td></tr>
+        <tr><td><strong>Author</strong></td><td><a href="https://rocketdev.tech" target="_blank">Rocket Dev</a></td></tr>
+    </table>
+</article>
+
+<div class="btn-row">
+    <button class="outline contrast btn-inline" id="reset-settings-btn">Reset to defaults</button>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+    // ── Settings persistence ────────────────────────────────
+    var DEFAULTS = {
+        'oo-theme':          'dark',
+        'oo-font-size':      '14px',
+        'oo-sidebar-width':  '220px',
+        'oo-content-width':  '960px',
+        'oo-control-height': '44px'
+    };
+
+    function getSetting(key) {
+        return localStorage.getItem(key) || DEFAULTS[key];
+    }
+
+    function setSetting(key, value) {
+        localStorage.setItem(key, value);
+    }
+
+    // ── Theme ───────────────────────────────────────────────
+    function applyTheme(theme) {
+        var resolved = theme;
+        if (theme === 'system') {
+            resolved = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        }
+        document.documentElement.setAttribute('data-theme', resolved);
+    }
+
+    var currentTheme = getSetting('oo-theme');
+    applyTheme(currentTheme);
+
+    // Theme switcher buttons
+    document.querySelectorAll('#theme-switcher label').forEach(function(label) {
+        var radio = label.querySelector('input');
+        if (radio.value === currentTheme) {
+            label.classList.add('selected');
+            radio.checked = true;
+        }
+        label.addEventListener('click', function() {
+            document.querySelectorAll('#theme-switcher label').forEach(function(l) {
+                l.classList.remove('selected');
+            });
+            label.classList.add('selected');
+            radio.checked = true;
+            setSetting('oo-theme', radio.value);
+            applyTheme(radio.value);
+        });
+    });
+
+    // Listen for system theme changes
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function() {
+        if (getSetting('oo-theme') === 'system') applyTheme('system');
+    });
+
+    // ── CSS variable settings ───────────────────────────────
+    function applyCSSVar(cssVar, value) {
+        document.documentElement.style.setProperty(cssVar, value);
+    }
+
+    function bindSelect(selectId, storageKey, cssVar) {
+        var el = document.getElementById(selectId);
+        if (!el) return;
+        var val = getSetting(storageKey);
+        el.value = val;
+        applyCSSVar(cssVar, val);
+
+        el.addEventListener('change', function() {
+            setSetting(storageKey, el.value);
+            applyCSSVar(cssVar, el.value);
+        });
+    }
+
+    bindSelect('setting-font-size',      'oo-font-size',      '--oo-font-size');
+    bindSelect('setting-sidebar-width',  'oo-sidebar-width',  '--oo-sidebar-width');
+    bindSelect('setting-content-width',  'oo-content-width',  '--oo-content-max');
+    bindSelect('setting-control-height', 'oo-control-height', '--oo-control-height');
+
+    // ── Reset ───────────────────────────────────────────────
+    document.getElementById('reset-settings-btn').addEventListener('click', function() {
+        Object.keys(DEFAULTS).forEach(function(key) {
+            localStorage.removeItem(key);
+        });
+        location.reload();
+    });
+})();
+</script>
+{% endblock %}

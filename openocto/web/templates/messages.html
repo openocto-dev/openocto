@@ -1,0 +1,277 @@
+{% extends "base.html" %}
+{% block title %}Messages — OpenOcto{% endblock %}
+
+{% block content %}
+<div class="chat-page">
+
+    {% if flash %}
+    <div class="flash flash-{{ flash_type or 'success' }}">{{ flash }}</div>
+    {% endif %}
+
+    <!-- Top bar: filters + controls -->
+    <div class="chat-topbar">
+        <div class="chat-topbar-left">
+            <h2 style="margin: 0;">Chat</h2>
+            <span class="chat-persona-badge">{{ persona }}</span>
+        </div>
+        <div class="chat-topbar-right">
+            <form method="GET" action="/messages" class="chat-filter-form">
+                <select name="user_id" onchange="this.form.submit()">
+                    {% for u in users %}
+                    <option value="{{ u.id }}" {% if u.id == user_id %}selected{% endif %}>{{ u.name }}</option>
+                    {% endfor %}
+                </select>
+                <select name="persona" onchange="this.form.submit()">
+                    {% for p in personas %}
+                    <option value="{{ p }}" {% if p == persona %}selected{% endif %}>{{ p }}</option>
+                    {% endfor %}
+                </select>
+            </form>
+            <details class="chat-menu">
+                <summary class="chat-menu-btn" title="Options">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+                </summary>
+                <div class="chat-menu-dropdown">
+                    <form method="GET" action="/messages" style="padding: 0.5rem;">
+                        <input type="hidden" name="user_id" value="{{ user_id }}">
+                        <input type="hidden" name="persona" value="{{ persona }}">
+                        <input type="text" name="q" value="{{ query }}" placeholder="Search messages..." style="margin-bottom: 0.5rem;">
+                        <button type="submit" class="btn-sm outline" style="width: 100%;">Search</button>
+                    </form>
+                    <hr style="margin: 0.25rem 0;">
+                    <form method="POST" action="/api/messages/clear"
+                          onsubmit="return confirm('Clear all messages for {{ persona }}?')"
+                          style="padding: 0.5rem;">
+                        <input type="hidden" name="user_id" value="{{ user_id }}">
+                        <input type="hidden" name="persona" value="{{ persona }}">
+                        <button type="submit" class="btn-sm contrast" style="width: 100%;">Clear History</button>
+                    </form>
+                </div>
+            </details>
+        </div>
+    </div>
+
+    {% if query %}
+    <div class="chat-search-notice">
+        <small>Search results for "{{ query }}" ({{ total }} found) &mdash; <a href="/messages?user_id={{ user_id }}&persona={{ persona }}">Back to chat</a></small>
+    </div>
+    {% endif %}
+
+    <!-- Chat messages area -->
+    <div class="chat-messages" id="chat-messages">
+        {% if has_next %}
+        <div style="text-align: center; padding: 0.5rem;">
+            <a href="/messages?user_id={{ user_id }}&persona={{ persona }}&page={{ current_page + 1 }}" class="btn-sm outline">Load older messages</a>
+        </div>
+        {% endif %}
+
+        {% if not messages %}
+        <div class="chat-empty">
+            <p>No messages yet. Start a conversation below.</p>
+        </div>
+        {% endif %}
+
+        {% set ns = namespace(last_date='') %}
+        {% for msg in messages %}
+            {% if msg.created_at %}
+                {% set msg_date = msg.created_at[:10] %}
+                {% if msg_date != ns.last_date %}
+                    {% set ns.last_date = msg_date %}
+                    <div class="chat-date-separator">
+                        <span>{{ msg_date }}</span>
+                    </div>
+                {% endif %}
+            {% endif %}
+        <div class="chat-bubble chat-{{ msg.role }}">
+            <div class="chat-bubble-content">
+                {% if msg.created_at %}
+                <div class="chat-bubble-time">{{ msg.created_at[11:16] }}</div>
+                {% endif %}
+                <div class="chat-bubble-text">{{ msg.content }}</div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Chat input area -->
+    <div class="chat-input-bar">
+        <button type="button"
+                class="chat-tts-toggle "
+                id="tts-toggle"
+                title="Toggle voice output">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="tts-icon-on">
+                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+            </svg>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="tts-icon-off" style="display:none">
+                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/>
+            </svg>
+        </button>
+        <input type="text"
+               id="chat-input"
+               placeholder="Type a message..."
+               autocomplete="off"
+               >
+        <button type="button"
+                id="chat-send"
+                title="Send"
+                >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        </button>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+    var input = document.getElementById('chat-input');
+    var sendBtn = document.getElementById('chat-send');
+    var messages = document.getElementById('chat-messages');
+    var ttsToggle = document.getElementById('tts-toggle');
+    var ttsOn = document.getElementById('tts-icon-on');
+    var ttsOff = document.getElementById('tts-icon-off');
+    var ttsEnabled = localStorage.getItem('oo-tts') !== 'off';
+    var userId = {{ user_id or 'null' }};
+    var persona = '{{ persona }}';
+
+    if (!input) return;
+
+    // TTS toggle state
+    function updateTtsUI() {
+        if (ttsEnabled) {
+            ttsOn.style.display = '';
+            ttsOff.style.display = 'none';
+            ttsToggle.classList.add('active');
+        } else {
+            ttsOn.style.display = 'none';
+            ttsOff.style.display = '';
+            ttsToggle.classList.remove('active');
+        }
+    }
+    updateTtsUI();
+
+    ttsToggle.addEventListener('click', function() {
+        ttsEnabled = !ttsEnabled;
+        localStorage.setItem('oo-tts', ttsEnabled ? 'on' : 'off');
+        updateTtsUI();
+    });
+
+    // Scroll to bottom
+    function scrollToBottom() {
+        messages.scrollTop = messages.scrollHeight;
+    }
+    scrollToBottom();
+
+    // Track last displayed date for day separators
+    var lastDate = (function() {
+        var seps = messages.querySelectorAll('.chat-date-separator span');
+        return seps.length ? seps[seps.length - 1].textContent : '';
+    })();
+
+    // Format current time as HH:MM
+    function nowTime() {
+        var d = new Date();
+        return ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
+    }
+
+    // Format current date as YYYY-MM-DD
+    function todayDate() {
+        return new Date().toISOString().substring(0, 10);
+    }
+
+    // Insert a day separator if the date changed
+    function maybeAddDateSeparator() {
+        var today = todayDate();
+        if (today !== lastDate) {
+            lastDate = today;
+            var sep = document.createElement('div');
+            sep.className = 'chat-date-separator';
+            sep.innerHTML = '<span>' + today + '</span>';
+            messages.appendChild(sep);
+        }
+    }
+
+    // Add a bubble to the chat
+    function addBubble(role, content, time) {
+        maybeAddDateSeparator();
+        var displayTime = time ? time.substring(11, 16) : nowTime();
+        var div = document.createElement('div');
+        div.className = 'chat-bubble chat-' + role;
+        div.innerHTML =
+            '<div class="chat-bubble-content">' +
+                '<div class="chat-bubble-time">' + displayTime + '</div>' +
+                '<div class="chat-bubble-text">' + escapeHtml(content) + '</div>' +
+            '</div>';
+        messages.appendChild(div);
+        scrollToBottom();
+        return div;
+    }
+
+    function escapeHtml(text) {
+        var d = document.createElement('div');
+        d.textContent = text;
+        return d.innerHTML;
+    }
+
+    // Send message
+    function sendMessage() {
+        var text = input.value.trim();
+        if (!text) return;
+
+        input.value = '';
+        addBubble('user', text);
+
+        // Show typing indicator
+        var typing = document.createElement('div');
+        typing.className = 'chat-bubble chat-assistant';
+        typing.innerHTML = '<div class="chat-bubble-content"><div class="chat-typing"><span></span><span></span><span></span></div></div>';
+        messages.appendChild(typing);
+        scrollToBottom();
+
+        sendBtn.disabled = true;
+        input.disabled = true;
+
+        fetch('/api/messages/send', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                content: text,
+                user_id: userId,
+                persona: persona,
+                tts: ttsEnabled,
+            }),
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            messages.removeChild(typing);
+            if (data.content) {
+                addBubble('assistant', data.content);
+            } else if (data.error) {
+                addBubble('assistant', '[Error: ' + data.error + ']');
+            }
+        })
+        .catch(function(err) {
+            messages.removeChild(typing);
+            addBubble('assistant', '[Connection error]');
+        })
+        .finally(function() {
+            sendBtn.disabled = false;
+            input.disabled = false;
+            input.focus();
+        });
+    }
+
+    sendBtn.addEventListener('click', sendMessage);
+    input.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage();
+        }
+    });
+
+    // Focus input on load
+    input.focus();
+})();
+</script>
+{% endblock %}

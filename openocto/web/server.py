@@ -31,6 +31,11 @@ async def first_run_redirect(
         and not path.startswith("/static")
         and not path.startswith("/ws")
         and not path.startswith("/api/wizard")
+        and not path.startswith("/legal")
+        and not path.startswith("/api/legal")
+        and not path.startswith("/settings")
+        and not path.startswith("/calibration")
+        and not path.startswith("/api/calibration")
     ):
         raise web.HTTPFound("/wizard")
     return await handler(request)

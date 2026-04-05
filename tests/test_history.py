@@ -114,8 +114,11 @@ class TestMessages:
 
         msgs = store.get_recent_messages(uid, "octo")
         assert len(msgs) == 2
-        assert msgs[0] == {"role": "user", "content": "Hello!"}
-        assert msgs[1] == {"role": "assistant", "content": "Hi there!"}
+        assert msgs[0]["role"] == "user"
+        assert msgs[0]["content"] == "Hello!"
+        assert "created_at" in msgs[0]
+        assert msgs[1]["role"] == "assistant"
+        assert msgs[1]["content"] == "Hi there!"
 
     def test_messages_ordered_oldest_first(self, store):
         uid = store.create_user("Dmitry")

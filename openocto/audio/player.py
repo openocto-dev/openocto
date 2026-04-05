@@ -14,6 +14,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Fade duration in seconds — eliminates clicks on start/stop
+_FADE_SECONDS = 0.005  # 5 ms
+
 
 class AudioPlayer:
     """Plays audio through the default (or configured) output device."""
@@ -24,6 +27,7 @@ class AudioPlayer:
         self._output_device = _resolve_device(raw, kind="output")
         self._playing = False
         self._stop_event = threading.Event()
+        self._lock = threading.Lock()
 
     def play(self, audio: np.ndarray, sample_rate: int) -> None:
         """Play audio synchronously (blocks until done or stopped)."""
@@ -31,19 +35,53 @@ class AudioPlayer:
             return
 
         audio_float = self._to_float32(audio)
-        self._playing = True
-        self._stop_event.clear()
+        audio_float = self._apply_fades(audio_float, sample_rate)
+
+        with self._lock:
+            self._playing = True
+            self._stop_event.clear()
 
         try:
-            sd.play(audio_float, samplerate=sample_rate, device=self._output_device)
-            # Poll for stop signal instead of blocking with sd.wait()
-            while sd.get_stream().active and not self._stop_event.is_set():
-                self._stop_event.wait(timeout=0.05)
+            # Use a dedicated OutputStream instead of global sd.play()
+            # to avoid conflicts with the capture stream running in parallel
+            finished_event = threading.Event()
+
+            def _finished_callback():
+                finished_event.set()
+
+            stream = sd.OutputStream(
+                samplerate=sample_rate,
+                channels=1,
+                dtype="float32",
+                device=self._output_device,
+                finished_callback=_finished_callback,
+            )
+
+            # Ensure audio is 2D (samples, channels) for OutputStream.write()
+            if audio_float.ndim == 1:
+                audio_float = audio_float.reshape(-1, 1)
+
+            stream.start()
+            try:
+                # Write audio in chunks to allow stop interruption
+                chunk_size = max(1024, sample_rate // 20)  # ~50ms chunks
+                offset = 0
+                while offset < len(audio_float) and not self._stop_event.is_set():
+                    end = min(offset + chunk_size, len(audio_float))
+                    stream.write(audio_float[offset:end])
+                    offset = end
+
+                # Wait for the stream to finish playing remaining buffer
+                if not self._stop_event.is_set():
+                    finished_event.wait(timeout=5.0)
+            finally:
+                stream.stop()
+                stream.close()
         except Exception:
             logger.exception("Audio playback error")
         finally:
-            sd.stop()
-            self._playing = False
+            with self._lock:
+                self._playing = False
 
         logger.debug("Audio playback finished (%d samples @ %dHz)", audio.size, sample_rate)
 
@@ -72,12 +110,28 @@ class AudioPlayer:
     def stop(self) -> None:
         """Interrupt current playback (for barge-in)."""
         self._stop_event.set()
-        sd.stop()
-        self._playing = False
+        with self._lock:
+            self._playing = False
 
     @property
     def is_playing(self) -> bool:
         return self._playing
+
+    @staticmethod
+    def _apply_fades(audio: np.ndarray, sample_rate: int) -> np.ndarray:
+        """Apply short fade-in and fade-out to prevent clicks."""
+        fade_samples = int(sample_rate * _FADE_SECONDS)
+        if fade_samples < 2 or len(audio) < fade_samples * 2:
+            return audio
+
+        audio = audio.copy()
+        # Fade-in
+        fade_in = np.linspace(0.0, 1.0, fade_samples, dtype=np.float32)
+        audio[:fade_samples] *= fade_in
+        # Fade-out
+        fade_out = np.linspace(1.0, 0.0, fade_samples, dtype=np.float32)
+        audio[-fade_samples:] *= fade_out
+        return audio
 
     @staticmethod
     def _to_float32(audio: np.ndarray) -> np.ndarray:

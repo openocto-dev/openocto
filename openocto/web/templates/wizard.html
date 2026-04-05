@@ -2,15 +2,15 @@
 {% block title %}Setup Wizard — OpenOcto{% endblock %}
 
 {% block nav %}
-<nav class="container">
-    <ul>
-        <li><strong>&#x1f419; OpenOcto Setup</strong></li>
-    </ul>
-</nav>
+<!-- No sidebar on wizard page -->
 {% endblock %}
 
 {% block content %}
-<article>
+<div style="display: flex; justify-content: space-between; align-items: center; max-width: 600px; margin: 0 auto 1.5rem;">
+    <strong style="font-size: 1.2rem;">&#x1f419; OpenOcto Setup</strong>
+    <a href="/" role="button" class="outline secondary btn-sm">Cancel</a>
+</div>
+<article style="max-width: 600px; margin: 0 auto;">
     <div class="wizard-progress" id="progress">
         {% for i in range(total_steps) %}
         <div class="step {% if i == 0 %}active{% endif %}" data-step="{{ i + 1 }}"></div>
@@ -139,8 +139,41 @@
             </div>
         </div>
 
-        <!-- Step 6: Summary + Save -->
+        <!-- Step 6: Mic Calibration -->
         <div class="wizard-step" data-step="6" hidden>
+            <h3>&#x1f399; Microphone Calibration</h3>
+            <p>Calibrate your microphone so OpenOcto knows when you're speaking.</p>
+
+            <div style="margin-bottom:1rem;">
+                <strong>1. Record silence</strong>
+                <p><small>Click and stay quiet for 3 seconds.</small></p>
+                <button type="button" id="wiz-btn-silence" onclick="wizRecordPhase('silence', 3)">Record Silence (3s)</button>
+                <div id="wiz-silence-status"></div>
+            </div>
+
+            <div style="margin-bottom:1rem;">
+                <strong>2. Record speech</strong>
+                <p><small>Click and speak continuously for 5 seconds.</small></p>
+                <button type="button" id="wiz-btn-speech" onclick="wizRecordPhase('speech', 5)">Record Speech (5s)</button>
+                <div id="wiz-speech-status"></div>
+            </div>
+
+            <div id="wiz-cal-result" style="display:none; margin-bottom:1rem;">
+                <table>
+                    <thead><tr><th>Parameter</th><th>Value</th></tr></thead>
+                    <tbody id="wiz-cal-table"></tbody>
+                </table>
+            </div>
+
+            <div class="wizard-nav">
+                <button type="button" class="secondary" onclick="prevStep(5)">&larr; Back</button>
+                <button type="button" onclick="nextStep(7)">Next &rarr;</button>
+            </div>
+            <small style="color:var(--pico-muted-color);">You can skip this step and calibrate later from Settings &rarr; Mic Calibration.</small>
+        </div>
+
+        <!-- Step 7: Summary + Save -->
+        <div class="wizard-step" data-step="7" hidden>
             <h3>&#x2705; Ready to go!</h3>
             <p>Review your settings and save.</p>
 
@@ -150,7 +183,7 @@
             </table>
 
             <div class="wizard-nav">
-                <button type="button" class="secondary" onclick="prevStep(5)">&larr; Back</button>
+                <button type="button" class="secondary" onclick="prevStep(6)">&larr; Back</button>
                 <button type="button" id="save-btn" onclick="saveWizard()">Save &amp; Start</button>
             </div>
         </div>
@@ -177,7 +210,7 @@ function showStep(n) {
 }
 
 function nextStep(n) {
-    if (n === 6) buildSummary();
+    if (n === 7) buildSummary();
     showStep(n);
 }
 
@@ -295,6 +328,108 @@ function saveWizard() {
         alert('Connection error');
     });
 }
+
+// --- Mic Calibration within wizard ---
+const wizCalData = { silence: null, speech: null };
+let wizCalRecommended = null;
+
+function wizRecordPhase(phase, duration) {
+    const btn = document.getElementById('wiz-btn-' + phase);
+    const status = document.getElementById('wiz-' + phase + '-status');
+
+    btn.disabled = true;
+    btn.setAttribute('aria-busy', 'true');
+
+    let remaining = duration;
+    status.innerHTML = '<span class="rec-indicator"></span> <small>Recording ' + remaining + 's...</small>';
+    const timer = setInterval(() => {
+        remaining--;
+        if (remaining > 0) {
+            status.innerHTML = '<span class="rec-indicator"></span> <small>Recording ' + remaining + 's...</small>';
+        } else {
+            status.innerHTML = '<span class="rec-indicator"></span> <small>Processing...</small>';
+            clearInterval(timer);
+        }
+    }, 1000);
+
+    fetch('/api/calibration/record', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ duration: duration }),
+    })
+    .then(r => r.json())
+    .then(result => {
+        clearInterval(timer);
+        btn.disabled = false;
+        btn.removeAttribute('aria-busy');
+        btn.textContent = 'Re-record ' + phase;
+
+        wizCalData[phase] = result;
+        status.innerHTML = '<small style="color:var(--pico-ins-color)">Recorded! RMS mean=' + result.stats.rms_mean + ', prob max=' + result.stats.prob_max + '</small>';
+
+        if (phase === 'speech') {
+            const rms_vals = result.chunks.map(c => c.rms).sort((a,b) => a-b);
+            result.stats.rms_p25 = rms_vals[Math.floor(rms_vals.length * 0.25)];
+        }
+
+        if (wizCalData.silence && wizCalData.speech) {
+            wizAnalyze();
+        }
+    })
+    .catch(err => {
+        clearInterval(timer);
+        btn.disabled = false;
+        btn.removeAttribute('aria-busy');
+        status.innerHTML = '<small style="color:var(--pico-del-color)">Error: ' + err + '</small>';
+    });
+}
+
+function wizAnalyze() {
+    fetch('/api/calibration/analyze', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            silence: wizCalData.silence.stats,
+            speech: wizCalData.speech.stats,
+        }),
+    })
+    .then(r => r.json())
+    .then(result => {
+        wizCalRecommended = result.recommended;
+        const div = document.getElementById('wiz-cal-result');
+        div.style.display = 'block';
+        const tbody = document.getElementById('wiz-cal-table');
+        const rec = result.recommended;
+        tbody.innerHTML = [
+            ['RMS threshold', rec.rms_speech_threshold],
+            ['Silero threshold', rec.threshold],
+            ['Silence duration', rec.silence_duration + 's'],
+        ].map(([k,v]) => '<tr><td>' + k + '</td><td><strong>' + v + '</strong></td></tr>').join('');
+    });
+}
+
+// Include calibration data in summary and save
+const _origGetFormData = getFormData;
+getFormData = function() {
+    const d = _origGetFormData();
+    if (wizCalRecommended) {
+        d.calibration = wizCalRecommended;
+    }
+    return d;
+};
+
+const _origBuildSummary = buildSummary;
+buildSummary = function() {
+    _origBuildSummary();
+    if (wizCalRecommended) {
+        const tbody = document.getElementById('summary-table');
+        const r = wizCalRecommended;
+        tbody.innerHTML += '<tr><td><strong>Mic calibration</strong></td><td>RMS=' + r.rms_speech_threshold + ', Silero=' + r.threshold + ', silence=' + r.silence_duration + 's</td></tr>';
+    } else {
+        const tbody = document.getElementById('summary-table');
+        tbody.innerHTML += '<tr><td><strong>Mic calibration</strong></td><td><em>Skipped</em></td></tr>';
+    }
+};
 
 // Init
 onBackendChange();

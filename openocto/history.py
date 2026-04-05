@@ -248,14 +248,14 @@ class HistoryStore:
         Returns dicts with 'role' and 'content' keys — ready for AI backends.
         """
         rows = self._conn.execute(
-            "SELECT role, content FROM ("
-            "  SELECT role, content, id FROM messages "
+            "SELECT role, content, created_at FROM ("
+            "  SELECT role, content, created_at, id FROM messages "
             "  WHERE user_id = ? AND persona = ? "
             "  ORDER BY id DESC LIMIT ?"
             ") sub ORDER BY id ASC",
             (user_id, persona, limit * 2),  # limit is in turns, *2 for messages
         ).fetchall()
-        return [{"role": r["role"], "content": r["content"]} for r in rows]
+        return [{"role": r["role"], "content": r["content"], "created_at": r["created_at"]} for r in rows]
 
     def clear_history(
         self, user_id: int, persona: str | None = None,

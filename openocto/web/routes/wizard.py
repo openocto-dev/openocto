@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 routes = web.RouteTableDef()
 
-TOTAL_STEPS = 6
+TOTAL_STEPS = 7
 
 
 @routes.get("/wizard")
@@ -92,6 +92,23 @@ async def api_wizard_save(request: web.Request) -> web.Response:
         wakeword_enabled=data.get("wakeword_enabled", False),
         wakeword_model=data.get("wakeword_model", ""),
     )
+
+    # Apply calibration if provided
+    calibration = data.get("calibration")
+    if calibration:
+        import yaml
+        from openocto.config import _deep_merge, USER_CONFIG_PATH as cfg_path
+        vad_update = {}
+        for key in ("rms_speech_threshold", "threshold", "silence_duration"):
+            if key in calibration:
+                vad_update[key] = calibration[key]
+        if vad_update and cfg_path.exists():
+            with open(cfg_path) as f:
+                existing_cfg = yaml.safe_load(f) or {}
+            merged = _deep_merge(existing_cfg, {"vad": vad_update})
+            with open(cfg_path, "w") as f:
+                yaml.dump(merged, f, default_flow_style=False, allow_unicode=True)
+            logger.info("Wizard calibration saved: %s", vad_update)
 
     logger.info("Wizard config saved for user %r, backend=%s", user_name, backend)
     return web.json_response({"ok": True, "redirect": "/"})

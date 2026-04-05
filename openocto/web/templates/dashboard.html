@@ -4,29 +4,239 @@
 {% block content %}
 <h2>Dashboard</h2>
 
+<!-- ── Status cards ── -->
 <div class="card-grid">
-    <article>
-        <header>Pipeline State</header>
-        <p>
-            <span id="state-badge" class="state-badge state-{{ state }}">{{ state }}</span>
-        </p>
+    <article class="dash-card">
+        <div class="dash-card-icon">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+            </svg>
+        </div>
+        <div class="dash-card-body">
+            <div class="dash-card-label">Pipeline State</div>
+            <div class="dash-card-value">
+                <span id="state-badge" class="state-badge state-{{ state }}">{{ state }}</span>
+            </div>
+        </div>
     </article>
 
-    <article>
-        <header>Active User</header>
-        <p>{{ user_name }}</p>
+    <a href="/users" class="dash-card-link">
+        <article class="dash-card dash-card-clickable">
+            <div class="dash-card-avatar">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                    <circle cx="12" cy="7" r="4"/>
+                </svg>
+            </div>
+            <div class="dash-card-body">
+                <div class="dash-card-label">Active User</div>
+                <div class="dash-card-value">{{ user_name }}</div>
+            </div>
+            <div class="dash-card-arrow">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+            </div>
+        </article>
+    </a>
+
+    <a href="/personas" class="dash-card-link">
+        <article class="dash-card dash-card-clickable">
+            <div class="dash-card-avatar has-img">
+                <img src="/static/avatars/{{ persona_slug }}.png"
+                     alt="{{ persona_name }}"
+                     onerror="this.style.display='none'; this.parentElement.classList.remove('has-img'); this.parentElement.textContent='{{ persona_name[:1] }}';">
+            </div>
+            <div class="dash-card-body">
+                <div class="dash-card-label">Persona</div>
+                <div class="dash-card-value">{{ persona_name }}</div>
+            </div>
+            <div class="dash-card-arrow">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+            </div>
+        </article>
+    </a>
+
+    <a href="/config" class="dash-card-link">
+        <article class="dash-card dash-card-clickable">
+            <div class="dash-card-icon">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
+                    <line x1="8" y1="21" x2="16" y2="21"/>
+                    <line x1="12" y1="17" x2="12" y2="21"/>
+                </svg>
+            </div>
+            <div class="dash-card-body">
+                <div class="dash-card-label">AI Backend</div>
+                <div class="dash-card-value">{{ backend }}</div>
+            </div>
+            <div class="dash-card-arrow">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+            </div>
+        </article>
+    </a>
+</div>
+
+<!-- ── Statistics ── -->
+<h3 style="margin-top: 2rem;">Statistics</h3>
+
+<div class="stats-grid">
+    <!-- Ring: messages breakdown -->
+    <article class="stat-card stat-card-ring">
+        <div class="stat-ring" data-value="{{ stats.total_messages }}" data-user="{{ stats.user_messages }}" data-assistant="{{ stats.assistant_messages }}">
+            <svg viewBox="0 0 100 100" class="stat-ring-svg">
+                <circle cx="50" cy="50" r="40" class="stat-ring-bg"/>
+                {% if stats.total_messages > 0 %}
+                {% set pct = (stats.assistant_messages / stats.total_messages * 100) | round(0) | int %}
+                <circle cx="50" cy="50" r="40" class="stat-ring-fill stat-ring-coral"
+                        stroke-dasharray="{{ 251.3 * pct / 100 }} {{ 251.3 * (100 - pct) / 100 }}"
+                        stroke-dashoffset="62.8"/>
+                <circle cx="50" cy="50" r="40" class="stat-ring-fill stat-ring-teal"
+                        stroke-dasharray="{{ 251.3 * (100 - pct) / 100 }} {{ 251.3 * pct / 100 }}"
+                        stroke-dashoffset="{{ 62.8 - 251.3 * pct / 100 }}"/>
+                {% endif %}
+            </svg>
+            <div class="stat-ring-center">
+                <span class="stat-ring-number">{{ stats.total_messages }}</span>
+            </div>
+        </div>
+        <div class="stat-card-label">Messages</div>
+        <div class="stat-ring-legend">
+            <span class="stat-legend-dot" style="background: var(--oo-teal);"></span>
+            <span>You: {{ stats.user_messages }}</span>
+            <span class="stat-legend-dot" style="background: var(--oo-coral);"></span>
+            <span>AI: {{ stats.assistant_messages }}</span>
+        </div>
     </article>
 
-    <article>
-        <header>Persona</header>
-        <p>{{ persona_name }}</p>
+    <!-- Ring: memory usage -->
+    {% set mem_total = stats.fact_count + stats.note_count + stats.summary_count %}
+    <article class="stat-card stat-card-ring">
+        <div class="stat-ring">
+            <svg viewBox="0 0 100 100" class="stat-ring-svg">
+                <circle cx="50" cy="50" r="40" class="stat-ring-bg"/>
+                {% if mem_total > 0 %}
+                {% set f_pct = (stats.fact_count / mem_total * 100) | round(0) | int %}
+                {% set n_pct = (stats.note_count / mem_total * 100) | round(0) | int %}
+                {% set s_pct = 100 - f_pct - n_pct %}
+                <circle cx="50" cy="50" r="40" class="stat-ring-fill" style="stroke: var(--oo-teal);"
+                        stroke-dasharray="{{ 251.3 * f_pct / 100 }} {{ 251.3 * (100 - f_pct) / 100 }}"
+                        stroke-dashoffset="62.8"/>
+                <circle cx="50" cy="50" r="40" class="stat-ring-fill" style="stroke: var(--oo-coral);"
+                        stroke-dasharray="{{ 251.3 * n_pct / 100 }} {{ 251.3 * (100 - n_pct) / 100 }}"
+                        stroke-dashoffset="{{ 62.8 - 251.3 * f_pct / 100 }}"/>
+                <circle cx="50" cy="50" r="40" class="stat-ring-fill" style="stroke: var(--oo-navy-500);"
+                        stroke-dasharray="{{ 251.3 * s_pct / 100 }} {{ 251.3 * (100 - s_pct) / 100 }}"
+                        stroke-dashoffset="{{ 62.8 - 251.3 * (f_pct + n_pct) / 100 }}"/>
+                {% endif %}
+            </svg>
+            <div class="stat-ring-center">
+                <span class="stat-ring-number">{{ mem_total }}</span>
+            </div>
+        </div>
+        <div class="stat-card-label">Memory</div>
+        <div class="stat-ring-legend">
+            <span class="stat-legend-dot" style="background: var(--oo-teal);"></span>
+            <span>Facts: {{ stats.fact_count }}</span>
+            <span class="stat-legend-dot" style="background: var(--oo-coral);"></span>
+            <span>Notes: {{ stats.note_count }}</span>
+        </div>
     </article>
 
-    <article>
-        <header>AI Backend</header>
-        <p>{{ backend }}</p>
+    <!-- Number cards -->
+    <article class="stat-card stat-card-num">
+        <div class="stat-num-grid">
+            <div class="stat-num-item">
+                <div class="stat-num-circle">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+                </div>
+                <div class="stat-num-val">{{ stats.total_users }}</div>
+                <div class="stat-num-label">Users</div>
+            </div>
+            <div class="stat-num-item">
+                <div class="stat-num-circle">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2C6.48 2 2 6 2 10.5c0 2 .8 3.8 2 5.2V22l4-2.5c1.2.5 2.6.8 4 .8 5.52 0 10-4 10-8.5S17.52 2 12 2z"/></svg>
+                </div>
+                <div class="stat-num-val">{{ stats.persona_count }}</div>
+                <div class="stat-num-label">Personas</div>
+            </div>
+            <div class="stat-num-item">
+                <div class="stat-num-circle">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                </div>
+                <div class="stat-num-val">{{ stats.skills_count }}</div>
+                <div class="stat-num-label">Skills</div>
+            </div>
+            <div class="stat-num-item">
+                <div class="stat-num-circle">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+                </div>
+                <div class="stat-num-val">{{ stats.tts_langs | length }}</div>
+                <div class="stat-num-label">TTS Langs</div>
+            </div>
+        </div>
+    </article>
+
+    <!-- Storage & activity bar chart -->
+    <article class="stat-card stat-card-num">
+        <div class="stat-storage">
+            <div class="stat-storage-row">
+                <span class="stat-storage-label">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+                    Database
+                </span>
+                <span class="stat-storage-val">{{ stats.db_size }} MB</span>
+            </div>
+            <div class="stat-storage-bar">
+                <div class="stat-storage-fill stat-fill-teal" style="width: {{ [stats.db_size * 2, 100] | min }}%;"></div>
+            </div>
+            <div class="stat-storage-row">
+                <span class="stat-storage-label">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+                    Models
+                </span>
+                <span class="stat-storage-val">{{ stats.models_size }} MB</span>
+            </div>
+            <div class="stat-storage-bar">
+                <div class="stat-storage-fill stat-fill-coral" style="width: {{ [stats.models_size / 10, 100] | min }}%;"></div>
+            </div>
+        </div>
+
+        {% if stats.daily_counts %}
+        <div class="stat-chart-label">Messages (last 7 days)</div>
+        <div class="stat-bar-chart" id="daily-chart">
+            {% set max_count = stats.daily_counts | map(attribute='count') | max %}
+            {% for d in stats.daily_counts %}
+            <div class="stat-bar-col" title="{{ d.day }}: {{ d.count }} messages">
+                <div class="stat-bar" style="height: {{ (d.count / max_count * 100) if max_count > 0 else 0 }}%;"></div>
+                <div class="stat-bar-label">{{ d.day[5:] }}</div>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
     </article>
 </div>
+
+<!-- ── Feature badges ── -->
+<div class="stat-features">
+    <span class="stat-feat {{ 'stat-feat-on' if stats.memory_on else 'stat-feat-off' }}">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+        Memory {{ 'ON' if stats.memory_on else 'OFF' }}
+    </span>
+    <span class="stat-feat {{ 'stat-feat-on' if stats.wakeword_on else 'stat-feat-off' }}">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        Wake Word {{ 'ON' if stats.wakeword_on else 'OFF' }}
+    </span>
+    <span class="stat-feat stat-feat-on">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
+        STT: {{ stats.stt_model }}
+    </span>
+    {% for lang in stats.tts_langs %}
+    <span class="stat-feat stat-feat-on">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+        TTS: {{ lang }}
+    </span>
+    {% endfor %}
+</div>
+
 {% endblock %}
 
 {% block scripts %}

@@ -1,0 +1,202 @@
+{% extends "base.html" %}
+{% block title %}Config — OpenOcto{% endblock %}
+
+{% block content %}
+<h2>Configuration</h2>
+
+{% if flash %}
+<div class="flash flash-{{ flash_type or 'success' }}">{{ flash }}</div>
+{% endif %}
+
+<p class="config-path-hint"><small>Config file: <code>{{ config_path }}</code></small></p>
+
+<!-- General (top-level) -->
+<article class="config-section">
+    <header>
+        <div class="config-section-title">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            <span>General</span>
+        </div>
+    </header>
+    <form method="POST" action="/api/config/section/general">
+        <div class="config-fields">
+            <label>
+                <span class="config-field-label">Language</span>
+                <select name="language">
+                    <option value="auto" {% if top_level.language == 'auto' %}selected{% endif %}>auto</option>
+                    <option value="en" {% if top_level.language == 'en' %}selected{% endif %}>en</option>
+                    <option value="ru" {% if top_level.language == 'ru' %}selected{% endif %}>ru</option>
+                </select>
+            </label>
+            <label>
+                <span class="config-field-label">Persona</span>
+                <select name="persona">
+                    {% for p in persona_names %}
+                    <option value="{{ p }}" {% if top_level.persona == p %}selected{% endif %}>{{ p }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+        </div>
+        <div class="config-actions">
+            <button type="submit" class="btn-inline btn-sm">Save</button>
+        </div>
+    </form>
+</article>
+
+<!-- Config sections -->
+{% for key, section in sections.items() %}
+<article class="config-section">
+    <header>
+        <div class="config-section-title">
+            {{ section.icon | safe }}
+            <span>{{ section.label }}</span>
+            {% if section.overridden %}
+            <span class="config-badge">customized</span>
+            {% endif %}
+        </div>
+        <button class="config-toggle outline secondary btn-sm" data-target="section-{{ key }}" type="button">Edit</button>
+    </header>
+
+    <!-- Read-only summary -->
+    <div class="config-summary" id="summary-{{ key }}">
+        <table>
+            {% for f in section.fields %}
+            <tr>
+                <td class="config-key">{{ f.name }}</td>
+                <td class="config-val">
+                    {% if f.secret and f.value %}
+                        <code>••••••••</code>
+                    {% elif f.type == 'bool' %}
+                        {% if f.value %}<span class="config-bool-on">on</span>{% else %}<span class="config-bool-off">off</span>{% endif %}
+                    {% elif f.type == 'dict' %}
+                        {% if f.value %}
+                            {% for dk, dv in f.value.items() %}
+                                <code>{{ dk }}: {{ dv }}</code>{% if not loop.last %}<br>{% endif %}
+                            {% endfor %}
+                        {% else %}
+                            <code>—</code>
+                        {% endif %}
+                    {% else %}
+                        <code>{{ f.value if f.value is not none else '—' }}</code>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </table>
+    </div>
+
+    <!-- Editable form (hidden by default) -->
+    <form method="POST" action="/api/config/section/{{ key }}" class="config-edit-form" id="section-{{ key }}" style="display: none;">
+        <div class="config-fields">
+            {% for f in section.fields %}
+                {% if f.type == 'bool' %}
+                <label class="config-field-row">
+                    <span class="config-field-label">{{ f.name }}</span>
+                    <input type="checkbox" name="{{ key }}.{{ f.name }}" role="switch" {% if f.value %}checked{% endif %}>
+                </label>
+                {% elif f.type == 'select' %}
+                <label>
+                    <span class="config-field-label">{{ f.name }}</span>
+                    <select name="{{ key }}.{{ f.name }}">
+                        {% for opt in f.choices %}
+                        <option value="{{ opt }}" {% if f.value == opt %}selected{% endif %}>{{ opt }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                {% elif f.type == 'dict' %}
+                <label>
+                    <span class="config-field-label">{{ f.name }} <small>(YAML)</small></span>
+                    <textarea name="{{ key }}.{{ f.name }}.__yaml__" rows="3" class="config-yaml-field">{{ f.yaml_value }}</textarea>
+                </label>
+                {% elif f.type == 'number' %}
+                <label>
+                    <span class="config-field-label">{{ f.name }}</span>
+                    <input type="number" name="{{ key }}.{{ f.name }}" value="{{ f.value if f.value is not none else '' }}" step="any">
+                </label>
+                {% else %}
+                <label>
+                    <span class="config-field-label">{{ f.name }}</span>
+                    <input type="{{ 'password' if f.secret else 'text' }}" name="{{ key }}.{{ f.name }}" value="{{ f.value if f.value is not none else '' }}" {% if f.secret %}autocomplete="off"{% endif %}>
+                </label>
+                {% endif %}
+            {% endfor %}
+        </div>
+        <div class="config-actions">
+            <button type="submit" class="btn-inline btn-sm">Save</button>
+            <button type="button" class="outline secondary btn-sm config-cancel" data-target="section-{{ key }}">Cancel</button>
+            <small class="config-hint">Changes require restart to take effect.</small>
+        </div>
+    </form>
+</article>
+{% endfor %}
+
+<!-- Raw YAML editor -->
+<details class="config-raw-details">
+    <summary>Advanced: Edit raw YAML</summary>
+    <article>
+        <form method="POST" action="/api/config/raw">
+            <textarea name="content" rows="20" id="config-editor"
+                      style="font-family: monospace; font-size: 0.85em;"></textarea>
+            <div class="config-actions">
+                <button type="submit" class="btn-inline btn-sm">Save YAML</button>
+                <small class="config-hint">Changes require restart to take effect.</small>
+            </div>
+        </form>
+    </article>
+</details>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+    // Toggle edit/summary for each section
+    document.querySelectorAll('.config-toggle').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            var target = document.getElementById(btn.dataset.target);
+            var summaryId = 'summary-' + btn.dataset.target.replace('section-', '');
+            var summary = document.getElementById(summaryId);
+            if (target.style.display === 'none') {
+                target.style.display = '';
+                if (summary) summary.style.display = 'none';
+                btn.textContent = 'Cancel';
+                btn.classList.remove('secondary');
+            } else {
+                target.style.display = 'none';
+                if (summary) summary.style.display = '';
+                btn.textContent = 'Edit';
+                btn.classList.add('secondary');
+            }
+        });
+    });
+
+    // Cancel buttons inside edit forms
+    document.querySelectorAll('.config-cancel').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            var target = document.getElementById(btn.dataset.target);
+            var sectionKey = btn.dataset.target.replace('section-', '');
+            var summary = document.getElementById('summary-' + sectionKey);
+            var headerBtn = document.querySelector('[data-target="' + btn.dataset.target + '"].config-toggle');
+            target.style.display = 'none';
+            if (summary) summary.style.display = '';
+            if (headerBtn) {
+                headerBtn.textContent = 'Edit';
+                headerBtn.classList.add('secondary');
+            }
+        });
+    });
+
+    // Load raw config into textarea
+    var editor = document.getElementById('config-editor');
+    if (editor) {
+        // Lazy-load only when details is opened
+        editor.closest('details').addEventListener('toggle', function() {
+            if (this.open && !editor.value) {
+                fetch('/api/config/raw')
+                    .then(function(r) { return r.text(); })
+                    .then(function(t) { editor.value = t; });
+            }
+        });
+    }
+})();
+</script>
+{% endblock %}
