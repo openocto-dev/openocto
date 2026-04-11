@@ -5,6 +5,22 @@ from __future__ import annotations
 from aiohttp import web
 
 
+def ensure_current_user(octo: object) -> None:
+    """Resolve default user from DB if ``_current_user_id`` is not set.
+
+    Mutates *octo* in place — subsequent accesses will see the resolved id.
+    """
+    if octo._current_user_id:
+        return
+    hs = getattr(octo, "_history_store", None)
+    if not hs:
+        return
+    users = hs.list_users()
+    if users:
+        default = next((u for u in users if u["is_default"]), users[0])
+        octo._current_user_id = default["id"]
+
+
 def register_routes(app: web.Application) -> None:
     """Register all route handlers."""
     from openocto.web.routes.dashboard import routes as dashboard_routes

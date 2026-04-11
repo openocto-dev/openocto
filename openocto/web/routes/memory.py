@@ -14,6 +14,9 @@ routes = web.RouteTableDef()
 @aiohttp_jinja2.template("memory.html")
 async def memory_page(request: web.Request) -> dict:
     octo = request.app["octo"]
+    from openocto.web.routes import ensure_current_user
+    ensure_current_user(octo)
+
     hs = octo._history_store
     user_id = octo._current_user_id
     persona_name = octo._persona.name if octo._persona else "octo"

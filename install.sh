@@ -173,8 +173,8 @@ fi
 # 4. Install
 info "Installing dependencies..."
 .venv/bin/pip install --quiet --upgrade pip
-.venv/bin/pip install --quiet -e ".[web]"
-ok "Installed (with web admin)"
+.venv/bin/pip install --quiet -e ".[audio,web]"
+ok "Installed (with audio + web admin)"
 
 # 5. Verify
 VERSION=$(.venv/bin/openocto --version 2>&1 | tail -1)
@@ -229,6 +229,16 @@ if [[ "$INSTALL_WW" =~ ^[Yy]$ ]]; then
     .venv/bin/pip install --quiet "openwakeword>=0.6.0" && ok "openwakeword installed" || warn "Failed to install openwakeword (optional — wake word won't work)"
 else
     info "Skipping wake word detection (you can enable it later with: pip install openwakeword)"
+fi
+
+# 8. Install torch for Silero TTS (needed for Russian voice synthesis)
+echo ""
+read -r -p "$(echo -e "${CYAN}Install Russian voice synthesis (Silero TTS, ~200 MB)? [Y/n]: ${NC}")" INSTALL_TORCH </dev/tty
+if [[ ! "$INSTALL_TORCH" =~ ^[Nn]$ ]]; then
+    info "Installing PyTorch (CPU) for Silero TTS..."
+    .venv/bin/pip install --quiet torch --index-url https://download.pytorch.org/whl/cpu && ok "torch installed (Silero TTS ready)" || warn "Failed to install torch (Russian TTS won't work)"
+else
+    info "Skipping Silero TTS (Russian voice will fall back to piper)"
 fi
 
 # 9. Ensure Node.js/npm is available (needed for Claude proxy)

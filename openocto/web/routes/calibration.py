@@ -67,17 +67,41 @@ async def api_record(request: web.Request) -> web.Response:
     # Record in a thread to not block the event loop
     import sounddevice as sd
 
+    # Resolve input device — prefer config, fall back to system default
+    octo = request.app["octo"]
+    cfg_device = None
+    if octo._config and octo._config.audio:
+        cfg_device = getattr(octo._config.audio, "input_device", None)
+
     def _record():
         samples = int(duration * SAMPLE_RATE)
-        rec = sd.rec(samples, samplerate=SAMPLE_RATE, channels=1, dtype="int16")
+        try:
+            rec = sd.rec(
+                samples,
+                samplerate=SAMPLE_RATE,
+                channels=1,
+                dtype="int16",
+                device=cfg_device,
+            )
+        except Exception as exc:
+            raise RuntimeError(
+                f"Cannot open microphone: {exc}. "
+                "Check that a recording device is connected and permissions are granted."
+            ) from exc
         sd.wait()
         return rec.flatten()
 
-    audio = await asyncio.to_thread(_record)
+    try:
+        audio = await asyncio.to_thread(_record)
+    except RuntimeError as exc:
+        logger.warning("Calibration recording failed: %s", exc)
+        return web.json_response(
+            {"error": str(exc)},
+            status=503,
+        )
 
     # Analyze with VAD
     from openocto.vad.silero import SileroVAD
-    octo = request.app["octo"]
     vad = SileroVAD(octo._config.vad)
     chunks = _chunk_analysis(audio, vad)
 

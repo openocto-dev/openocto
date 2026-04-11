@@ -114,10 +114,66 @@ def is_proxy_running() -> bool:
         return False
 
 
+def _patch_normalize_model() -> None:
+    """Patch claude-max-api-proxy to handle missing model name gracefully.
+
+    The proxy crashes with ``TypeError: Cannot read properties of undefined
+    (reading 'includes')`` when ``result.modelUsage`` is an empty object,
+    causing ``Object.keys(...)[0]`` to return ``undefined``.
+    """
+    # Find the adapter file relative to the proxy binary
+    proxy_bin = shutil.which("claude-max-api")
+    if not proxy_bin:
+        return
+    proxy_dir = os.path.dirname(os.path.dirname(os.path.realpath(proxy_bin)))
+    adapter_js = os.path.join(
+        proxy_dir, "lib", "node_modules", "claude-max-api-proxy",
+        "dist", "adapter", "cli-to-openai.js",
+    )
+    if not os.path.isfile(adapter_js):
+        # Try npm global on macOS/Linux (Homebrew layout)
+        for base in ("/opt/homebrew/lib", "/usr/local/lib", "/usr/lib"):
+            candidate = os.path.join(
+                base, "node_modules", "claude-max-api-proxy",
+                "dist", "adapter", "cli-to-openai.js",
+            )
+            if os.path.isfile(candidate):
+                adapter_js = candidate
+                break
+        else:
+            return
+
+    with open(adapter_js, encoding="utf-8") as f:
+        content = f.read()
+
+    if "if (!model)" in content:
+        return  # already patched
+
+    patched = content.replace(
+        "function normalizeModelName(model) {\n"
+        '    if (model.includes("opus"))',
+        "function normalizeModelName(model) {\n"
+        '    if (!model) return "claude-sonnet-4";\n'
+        '    if (model.includes("opus"))',
+    )
+    patched = patched.replace(
+        "const modelName = result.modelUsage\n"
+        "        ? Object.keys(result.modelUsage)[0]\n"
+        '        : "claude-sonnet-4";',
+        "const modelKeys = result.modelUsage ? Object.keys(result.modelUsage) : [];\n"
+        '    const modelName = modelKeys.length > 0 ? modelKeys[0] : "claude-sonnet-4";',
+    )
+
+    if patched == content:
+        return  # nothing to patch
+
+    with open(adapter_js, "w", encoding="utf-8") as f:
+        f.write(patched)
+    logger.info("Patched claude-max-api-proxy normalizeModelName for undefined model")
+
+
 def start_proxy() -> subprocess.Popen | None:
     """Start claude-max-proxy in the background. Returns the process, or None on failure."""
-    _patch_proxy_for_windows()
-
     env = _enriched_env()
     cmd = shutil.which("claude-max-api", path=env.get("PATH"))
     if not cmd:
@@ -172,6 +228,10 @@ def _stop_proxy(proc: subprocess.Popen) -> None:
 
 def ensure_proxy() -> bool:
     """Make sure claude-max-proxy is running. Returns True if ready."""
+    # Always apply patches regardless of proxy state
+    _patch_proxy_for_windows()
+    _patch_normalize_model()
+
     if is_proxy_running():
         return True
     proc = start_proxy()

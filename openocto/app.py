@@ -146,6 +146,8 @@ class OpenOctoApp:
                 print(f"{WARN}  Claude proxy not available. Install it with:")
                 print("     npm install -g claude-max-api-proxy")
                 print("   Falling back to other available backends.\n")
+                # Remove broken proxy from providers so router falls back
+                self._config.ai.providers.pop("claude-proxy", None)
 
         # AI Router
         from openocto.ai.router import AIRouter

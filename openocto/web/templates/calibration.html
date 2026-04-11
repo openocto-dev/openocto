@@ -94,7 +94,10 @@ function recordPhase(phase, duration) {
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({ duration: duration }),
     })
-    .then(r => r.json())
+    .then(r => {
+        if (!r.ok) return r.json().then(e => { throw new Error(e.error || r.statusText); });
+        return r.json();
+    })
     .then(result => {
         clearInterval(timer);
         btn.disabled = false;
