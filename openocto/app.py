@@ -570,9 +570,28 @@ class OpenOctoApp:
         # Schedule auto-listen as a separate task so _processing is fully released first
         asyncio.ensure_future(self._auto_listen())
 
+    def _cleanup(self) -> None:
+        """Kill child processes (proxy, web) on exit."""
+        # Cancel web server task
+        if self._web_task and not self._web_task.done():
+            self._web_task.cancel()
+        # Kill proxy (atexit may not fire on SIGHUP)
+        from openocto.utils.proxy import _stop_proxy
+        import subprocess
+        for attr in ("_proxy_proc",):
+            proc = getattr(self, attr, None)
+            if proc and isinstance(proc, subprocess.Popen):
+                _stop_proxy(proc)
+
     async def run(self, web_enabled: bool = True) -> None:
         """Main application loop."""
         self._loop = asyncio.get_running_loop()
+
+        # Ensure cleanup on SIGTERM/SIGHUP (terminal close)
+        import signal
+        for sig in (signal.SIGTERM, signal.SIGHUP):
+            self._loop.add_signal_handler(sig, self._cleanup)
+
         uid, uname = await self._resolve_user()
         self._current_user_id = uid
         logger.info("Active user: %s (id=%d)", uname, uid)
@@ -621,6 +640,7 @@ class OpenOctoApp:
         finally:
             self._capture.stop_stream()
             self._player.stop()
+            self._cleanup()
             print("\n Bye, see you soon! Run `openocto start` to come back.")
 
     async def _run_ptt_mode(self, header: str) -> None:
@@ -644,4 +664,5 @@ class OpenOctoApp:
             listener.stop()
             self._capture.stop()
             self._player.stop()
+            self._cleanup()
             print("\n Bye, see you soon! Run `openocto start` to come back.")
