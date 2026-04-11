@@ -276,15 +276,15 @@ if ! command -v npm &>/dev/null; then
     fi
 fi
 
-# 10. Install claude-max-api-proxy (optional, for Claude subscription users)
+# 10. Install claude-api-proxy (for Claude subscription users)
 if command -v npm &>/dev/null; then
     if ! command -v claude-max-api &>/dev/null; then
-        info "Installing claude-max-api-proxy (for Claude subscription users)..."
+        info "Installing claude-api-proxy (for Claude subscription users)..."
         # Fix npm cache permissions (common issue on macOS when npm was run with sudo)
         [ -d "$HOME/.npm" ] && chown -R "$(whoami)" "$HOME/.npm" 2>/dev/null || true
-        npm install -g claude-max-api-proxy --quiet && ok "claude-max-api-proxy installed" || warn "Failed to install claude-max-api-proxy (optional)"
+        npm install -g github:openocto-dev/claude-api-proxy --quiet && ok "claude-api-proxy installed" || warn "Failed to install claude-api-proxy (optional)"
     else
-        ok "claude-max-api-proxy already installed"
+        ok "claude-api-proxy already installed"
     fi
     # claude-max-api-proxy requires Claude Code CLI to work
     if command -v claude-max-api &>/dev/null && ! command -v claude &>/dev/null; then
