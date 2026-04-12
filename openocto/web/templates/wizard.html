@@ -89,6 +89,9 @@
                 <option value="{{ key }}" {% if loop.first %}selected{% endif %}>{{ desc }}</option>
                 {% endfor %}
             </select>
+            <div id="silero-torch-notice" style="display:none; margin-top:0.5rem;">
+                <small style="color:var(--pico-mark-color)">&#9888; {{ t('wiz.step3.torch_notice') }}</small>
+            </div>
 
             <div class="wizard-nav">
                 <button type="button" class="secondary" onclick="prevStep(2)">&larr; {{ t('wiz.back') }}</button>
@@ -244,6 +247,17 @@ function prevStep(n) {
     showStep(n);
 }
 
+var torchAvailable = {{ torch_available | tojson }};
+function onLangChange() {
+    var lang = document.getElementById('primary_lang').value;
+    var notice = document.getElementById('silero-torch-notice');
+    if (notice) notice.style.display = (lang !== 'en' && !torchAvailable) ? '' : 'none';
+}
+document.addEventListener('DOMContentLoaded', function() {
+    var langSel = document.getElementById('primary_lang');
+    if (langSel) { langSel.addEventListener('change', onLangChange); onLangChange(); }
+});
+
 function onBackendChange() {
     const backend = document.getElementById('backend').value;
     const apiGroup = document.getElementById('api-key-group');
@@ -383,7 +397,10 @@ function wizRecordPhase(phase, duration) {
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({ duration: duration }),
     })
-    .then(r => r.json())
+    .then(r => {
+        if (!r.ok) return r.json().then(e => { throw new Error(e.error || r.statusText); });
+        return r.json();
+    })
     .then(result => {
         clearInterval(timer);
         btn.disabled = false;

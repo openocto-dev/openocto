@@ -159,6 +159,9 @@ async def dashboard(request: web.Request) -> dict:
     if octo._state_machine:
         state = octo._state_machine.state.value
 
+    from openocto.web.routes import ensure_current_user
+    ensure_current_user(octo)
+
     user_name = None
     if octo._current_user_id and octo._history_store:
         users = octo._history_store.list_users()

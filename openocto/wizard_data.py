@@ -108,6 +108,15 @@ def detect_primary_lang() -> str:
     return "ru" if sys_locale.startswith("ru") else "en"
 
 
+def is_torch_available() -> bool:
+    """Check if PyTorch is importable (needed for Silero TTS)."""
+    try:
+        import torch  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
 def is_ollama_installed() -> bool:
     """Check if ollama binary is available."""
     return shutil.which("ollama") is not None
@@ -159,7 +168,7 @@ def save_wizard_config(
             tts_config["models"]["en"] = voice_en
         if voice_ru:
             tts_config["models"]["ru"] = voice_ru
-    if primary_lang in ("ru", "auto"):
+    if primary_lang in ("ru", "auto") and is_torch_available():
         tts_config["engines"] = {"ru": "silero"}
 
     audio_config: dict = {}

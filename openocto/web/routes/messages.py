@@ -35,6 +35,10 @@ async def _tts_speak(octo: object, text: str) -> None:
                     prefix, next(iter(octo._tts_engines.values()), None)
                 )
 
+            logger.info("TTS: detected lang=%s, engine=%s, available=%s",
+                        lang, type(tts_engine).__name__ if tts_engine else None,
+                        list(octo._tts_engines.keys()))
+
         if not tts_engine:
             return
 
@@ -73,6 +77,9 @@ async def messages_page(request: web.Request) -> dict:
     user_id_str = request.query.get("user_id", "")
     persona = request.query.get("persona", "")
     page = max(1, int(request.query.get("page", "1")))
+
+    from openocto.web.routes import ensure_current_user
+    ensure_current_user(octo)
 
     user_id = int(user_id_str) if user_id_str else octo._current_user_id
 
@@ -172,7 +179,11 @@ async def send_message(request: web.Request) -> web.Response:
             )
         except Exception as e:
             logger.error("AI chat error: %s", e)
-            reply = f"[Error: {e}]"
+            err_name = type(e).__name__
+            if "Connection" in err_name or "ConnectError" in str(e):
+                reply = "[Error: Could not connect to AI backend. Check that the service is running.]"
+            else:
+                reply = f"[Error: {e}]"
     else:
         reply = "[AI backend not configured. Start OpenOcto with `openocto start` for full functionality.]"
 

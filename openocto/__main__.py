@@ -61,8 +61,11 @@ def web(host: str, port: int) -> None:
             click.echo("  pip install -e '.[web]'")
             raise SystemExit(1)
 
+        import logging
         from openocto.web.server import create_web_app
         from aiohttp import web as aio_web
+
+        logger = logging.getLogger(__name__)
 
         # Create a minimal mock-like app object for the web server
         from openocto.config import load_config, AppConfig, USER_CONFIG_PATH
@@ -106,6 +109,29 @@ def web(host: str, port: int) -> None:
             octo._persona = persona_manager.activate(config.persona)
         except (ValueError, KeyError):
             pass
+
+        # Auto-start claude-proxy if needed
+        if config.ai.default_backend == "claude-proxy":
+            try:
+                from openocto.utils.proxy import ensure_proxy
+                if not ensure_proxy():
+                    click.secho(
+                        "  Claude proxy not available. Install with: "
+                        "npm install -g claude-max-api-proxy",
+                        fg="yellow",
+                    )
+                    # Remove broken proxy so router falls back to other backends
+                    config.ai.providers.pop("claude-proxy", None)
+            except Exception as e:
+                logger.warning("Proxy start failed: %s", e)
+                config.ai.providers.pop("claude-proxy", None)
+
+        # Initialize AI router so web chat works
+        try:
+            from openocto.ai.router import AIRouter
+            octo._ai_router = AIRouter(config.ai)
+        except Exception as e:
+            logger.warning("AI router not available: %s", e)
 
         app = create_web_app(octo)
         runner = aio_web.AppRunner(app)

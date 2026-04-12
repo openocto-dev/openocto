@@ -20,6 +20,7 @@ from openocto.wizard_data import (
     WHISPER_MODEL_SIZES,
     detect_primary_lang,
     is_ollama_installed,
+    is_torch_available,
     list_ollama_models,
     save_wizard_config,
 )
@@ -52,6 +53,7 @@ async def wizard_page(request: web.Request) -> dict:
         "wake_word_options": WAKE_WORD_OPTIONS,
         "ollama_recommended": OLLAMA_RECOMMENDED_MODELS,
         "quick_defaults": QUICK_DEFAULTS,
+        "torch_available": is_torch_available(),
     }
 
 
@@ -71,12 +73,20 @@ async def api_wizard_save(request: web.Request) -> web.Response:
     """Save wizard configuration."""
     data = await request.json()
 
-    # Create user if needed
+    # Create user if needed and set as active
     user_name = data.get("user_name", "User")
     store = HistoryStore()
     existing = store.get_user_by_name(user_name)
     if not existing:
         store.create_user(user_name, is_default=True)
+
+    # Update running app instance with the new/existing default user
+    octo = request.app["octo"]
+    users = store.list_users()
+    if users:
+        default = next((u for u in users if u["is_default"]), users[0])
+        octo._current_user_id = default["id"]
+
     store.close()
 
     # Save config
