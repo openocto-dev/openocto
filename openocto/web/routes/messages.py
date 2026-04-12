@@ -167,10 +167,18 @@ async def send_message(request: web.Request) -> web.Response:
             if ai_history and ai_history[-1]["role"] == "user":
                 ai_history.pop()
 
-            # Get system prompt
+            # Get system prompt + skill context
             system_prompt = ""
             if octo._persona:
                 system_prompt = octo._persona.system_prompt
+
+            # Enrich with system monitor skill
+            try:
+                from openocto.skills.system_monitor import build_ai_context
+                skill_context = build_ai_context(octo)
+                system_prompt = system_prompt + "\n\n" + skill_context
+            except Exception:
+                pass
 
             reply = await octo._ai_router.send(
                 user_text=content,
