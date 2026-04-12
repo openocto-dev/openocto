@@ -623,8 +623,15 @@ class OpenOctoApp:
 
     async def _run_ptt_mode(self, header: str) -> None:
         """Push-to-talk: hold Space to record."""
-        from openocto.utils.keyboard import AsyncPushToTalkListener
-        from pynput import keyboard as kb
+        try:
+            from openocto.utils.keyboard import AsyncPushToTalkListener
+            from pynput import keyboard as kb
+        except ImportError as e:
+            print(f"\n⚠️  Push-to-talk not available: {e}")
+            print("   On Wayland/headless systems, use wake word mode instead:")
+            print("   openocto start  (with wakeword.enabled: true in config)")
+            print("\n   Or set DISPLAY environment variable if using X11.")
+            return
         listener = AsyncPushToTalkListener(
             on_press=self._on_ptt_press,
             on_release=self._on_ptt_release,

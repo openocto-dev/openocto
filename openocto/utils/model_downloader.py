@@ -141,29 +141,63 @@ SILERO_TTS_MODELS: dict[str, dict] = {
 }
 
 
-def _download_file(url: str, dest: Path, desc: str = "") -> None:
-    """Download a file with progress bar."""
+def _download_file(url: str, dest: Path, desc: str = "", max_retries: int = 5) -> None:
+    """Download a file with progress bar, resume support, and retries."""
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_suffix(dest.suffix + ".tmp")
 
     logger.info("Downloading %s to %s", desc or url, dest)
-    response = requests.get(url, stream=True, timeout=30)
-    response.raise_for_status()
 
-    total = int(response.headers.get("content-length", 0))
-    with open(tmp, "wb") as f, tqdm(
-        desc=desc or dest.name,
-        total=total,
-        unit="B",
-        unit_scale=True,
-        unit_divisor=1024,
-    ) as bar:
-        for chunk in response.iter_content(chunk_size=8192):
-            f.write(chunk)
-            bar.update(len(chunk))
+    for attempt in range(1, max_retries + 1):
+        try:
+            # Resume from partial download
+            downloaded = tmp.stat().st_size if tmp.exists() else 0
+            headers = {"Range": f"bytes={downloaded}-"} if downloaded > 0 else {}
 
-    tmp.rename(dest)
-    logger.info("Downloaded %s", dest)
+            response = requests.get(url, stream=True, timeout=(15, 120), headers=headers)
+            response.raise_for_status()
+
+            # Total size from Content-Range or Content-Length
+            if response.status_code == 206:  # Partial content (resume)
+                content_range = response.headers.get("Content-Range", "")
+                total = int(content_range.split("/")[-1]) if "/" in content_range else 0
+            else:
+                total = int(response.headers.get("content-length", 0))
+                downloaded = 0  # Server doesn't support range, start over
+
+            mode = "ab" if downloaded > 0 else "wb"
+            with open(tmp, mode) as f, tqdm(
+                desc=desc or dest.name,
+                total=total,
+                initial=downloaded,
+                unit="B",
+                unit_scale=True,
+                unit_divisor=1024,
+            ) as bar:
+                for chunk in response.iter_content(chunk_size=32768):
+                    f.write(chunk)
+                    bar.update(len(chunk))
+
+            tmp.rename(dest)
+            logger.info("Downloaded %s", dest)
+            return
+
+        except (requests.exceptions.ConnectionError,
+                requests.exceptions.Timeout,
+                requests.exceptions.ChunkedEncodingError) as e:
+            if attempt < max_retries:
+                wait = attempt * 5
+                logger.warning(
+                    "Download interrupted (%s), retry %d/%d in %ds...",
+                    type(e).__name__, attempt, max_retries, wait,
+                )
+                import time
+                time.sleep(wait)
+            else:
+                raise RuntimeError(
+                    f"Failed to download {desc or url} after {max_retries} attempts. "
+                    f"Check your network connection and try again."
+                ) from e
 
 
 def get_whisper_model(model_size: str) -> Path:

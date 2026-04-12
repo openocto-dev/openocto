@@ -17,7 +17,7 @@ if [ -z "${OPENOCTO_INSTALLER_RUNNING:-}" ] && ! [ -t 0 ]; then
     exec bash "$TMPSCRIPT" </dev/tty
 fi
 
-INSTALLER_VERSION="1.0.1"
+INSTALLER_VERSION="1.0.2"
 REPO_URL="https://github.com/openocto-dev/openocto.git"
 MIN_PYTHON="3.10"
 
@@ -44,6 +44,17 @@ info()  { echo -e "${CYAN}$*${NC}"; }
 ok()    { echo -e "${GREEN}✓ $*${NC}"; }
 warn()  { echo -e "${YELLOW}⚠ $*${NC}"; }
 fail()  { echo -e "${RED}✗ $*${NC}"; exit 1; }
+
+# --- Safe interactive read (returns default when no TTY) ---
+# Usage: ask VARNAME "prompt" "default"
+ask() {
+    local varname="$1" prompt="$2" default="${3:-}"
+    if [ -t 0 ] || [ -e /dev/tty ]; then
+        read -r -p "$(echo -e "${CYAN}${prompt}${NC}")" "$varname" </dev/tty 2>/dev/null || eval "$varname='$default'"
+    else
+        eval "$varname='$default'"
+    fi
+}
 
 # --- Check Python ---
 find_python() {
@@ -92,10 +103,10 @@ if ! PYTHON=$(find_python); then
             warn "Python $MIN_PYTHON+ is required but not found."
             info "The easiest way to install it on macOS is via Homebrew."
             echo ""
-            read -r -p "$(echo -e "${CYAN}Install Homebrew and Python? [Y/n]: ${NC}")" INSTALL_BREW </dev/tty
+            ask INSTALL_BREW "Install Homebrew and Python? [Y/n]: " "Y"
             if [[ ! "$INSTALL_BREW" =~ ^[Nn]$ ]]; then
                 info "Installing Homebrew..."
-                if ! /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" < /dev/tty; then
+                if ! /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"; then
                     echo ""
                     fail "Homebrew installation failed.\n  Make sure your user has admin rights (System Settings → Users & Groups).\n  Then try again, or install manually:\n    /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"\n    brew install python@3.13"
                 fi
@@ -112,7 +123,7 @@ if ! PYTHON=$(find_python); then
         fi
         # Homebrew is available — install Python
         echo ""
-        read -r -p "$(echo -e "${CYAN}Install Python 3.13 via Homebrew? [Y/n]: ${NC}")" INSTALL_PY </dev/tty
+        ask INSTALL_PY "Install Python 3.13 via Homebrew? [Y/n]: " "Y"
         if [[ ! "$INSTALL_PY" =~ ^[Nn]$ ]]; then
             info "Installing Python 3.13..."
             brew install python@3.13
@@ -163,24 +174,41 @@ else
     cd "$INSTALL_DIR"
 fi
 
-# 3. Create venv
+# 3. Install system dependencies (audio libraries)
+if [ "$(uname)" != "Darwin" ]; then
+    if command -v apt-get &>/dev/null; then
+        if ! dpkg -s libportaudio2 &>/dev/null 2>&1; then
+            info "Installing system audio libraries (PortAudio)..."
+            sudo apt-get update -qq && sudo apt-get install -y -qq libportaudio2 portaudio19-dev
+            ok "PortAudio installed"
+        fi
+    elif command -v dnf &>/dev/null; then
+        if ! rpm -q portaudio &>/dev/null 2>&1; then
+            info "Installing system audio libraries (PortAudio)..."
+            sudo dnf install -y portaudio portaudio-devel
+            ok "PortAudio installed"
+        fi
+    fi
+fi
+
+# 4. Create venv
 if [ ! -d ".venv" ]; then
     info "Creating virtual environment..."
     "$PYTHON" -m venv .venv
     ok "Virtual environment created"
 fi
 
-# 4. Install
+# 5. Install
 info "Installing dependencies..."
 .venv/bin/pip install --quiet --upgrade pip
 .venv/bin/pip install --quiet -e ".[web]"
 ok "Installed (with web admin)"
 
-# 5. Verify
+# 6. Verify
 VERSION=$(.venv/bin/openocto --version 2>&1 | tail -1)
 ok "$VERSION"
 
-# 6. Make `openocto` available system-wide
+# 7. Make `openocto` available system-wide
 OCTO_BIN="$(pwd)/.venv/bin/openocto"
 SYMLINK_PLACED=false
 
@@ -221,9 +249,9 @@ if [ "$SYMLINK_PLACED" = false ]; then
     fi
 fi
 
-# 7. Install openwakeword (optional, for always-on wake word mode)
+# 8. Install openwakeword (optional, for always-on wake word mode)
 echo ""
-read -r -p "$(echo -e "${CYAN}Install wake word detection (\"Hey Octo!\")? [y/N]: ${NC}")" INSTALL_WW </dev/tty
+ask INSTALL_WW "Install wake word detection (\"Hey Octo!\")? [y/N]: " "N"
 if [[ "$INSTALL_WW" =~ ^[Yy]$ ]]; then
     info "Installing openwakeword..."
     .venv/bin/pip install --quiet "openwakeword>=0.6.0" && ok "openwakeword installed" || warn "Failed to install openwakeword (optional — wake word won't work)"
@@ -232,11 +260,22 @@ else
 fi
 
 # 9. Ensure Node.js/npm is available (needed for Claude proxy)
-if ! command -v npm &>/dev/null; then
+# Check if Node.js exists and is v18+ (required by Claude Code CLI)
+NODE_OK=false
+if command -v node &>/dev/null; then
+    NODE_MAJOR=$(node -e "console.log(process.versions.node.split('.')[0])" 2>/dev/null || echo "0")
+    if [ "$NODE_MAJOR" -ge 18 ] 2>/dev/null; then
+        NODE_OK=true
+    else
+        warn "Node.js v$NODE_MAJOR found but v18+ is required."
+    fi
+fi
+
+if [ "$NODE_OK" = false ]; then
     echo ""
     if [ "$(uname)" = "Darwin" ]; then
         if command -v brew &>/dev/null; then
-            read -r -p "$(echo -e "${CYAN}Node.js is required for Claude proxy. Install via Homebrew? [Y/n]: ${NC}")" INSTALL_NODE </dev/tty
+            ask INSTALL_NODE "Node.js is required for Claude proxy. Install via Homebrew? [Y/n]: " "Y"
             if [[ ! "$INSTALL_NODE" =~ ^[Nn]$ ]]; then
                 info "Installing Node.js..."
                 brew install node
@@ -248,14 +287,20 @@ if ! command -v npm &>/dev/null; then
             echo "     https://nodejs.org  (manual install)"
         fi
     elif command -v apt-get &>/dev/null; then
-        read -r -p "$(echo -e "${CYAN}Node.js is required for Claude proxy. Install via apt? [Y/n]: ${NC}")" INSTALL_NODE </dev/tty
+        ask INSTALL_NODE "Node.js is required for Claude proxy. Install via NodeSource? [Y/n]: " "Y"
         if [[ ! "$INSTALL_NODE" =~ ^[Nn]$ ]]; then
-            info "Installing Node.js..."
-            sudo apt-get update -qq && sudo apt-get install -y -qq nodejs npm
-            ok "Node.js installed"
+            info "Installing Node.js 22 via NodeSource..."
+            if curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - &>/dev/null; then
+                sudo apt-get install -y -qq nodejs
+                ok "Node.js $(node --version 2>/dev/null || echo '') installed"
+            else
+                warn "NodeSource setup failed, trying system package..."
+                sudo apt-get update -qq && sudo apt-get install -y -qq nodejs npm
+                ok "Node.js installed (system version)"
+            fi
         fi
     elif command -v dnf &>/dev/null; then
-        read -r -p "$(echo -e "${CYAN}Node.js is required for Claude proxy. Install via dnf? [Y/n]: ${NC}")" INSTALL_NODE </dev/tty
+        ask INSTALL_NODE "Node.js is required for Claude proxy. Install via dnf? [Y/n]: " "Y"
         if [[ ! "$INSTALL_NODE" =~ ^[Nn]$ ]]; then
             info "Installing Node.js..."
             sudo dnf install -y nodejs npm
@@ -287,7 +332,7 @@ fi
 
 # 11. Run setup wizard
 echo ""
-read -r -p "$(echo -e "${CYAN}Run setup wizard in [B]rowser or [C]LI? [B/c]: ${NC}")" WIZARD_MODE </dev/tty
+ask WIZARD_MODE "Run setup wizard in [B]rowser or [C]LI? [B/c]: " "B"
 if [[ "$WIZARD_MODE" =~ ^[Cc]$ ]]; then
     info "Starting CLI setup wizard..."
     echo ""
