@@ -760,6 +760,37 @@ body {
     white-space: nowrap;
 }
 
+/* System info bars */
+.card-grid-4 {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 1rem;
+}
+.sys-icon { opacity: 0.7; }
+.sys-bar {
+    height: 6px;
+    border-radius: 3px;
+    background: var(--oo-navy-700);
+    overflow: hidden;
+    margin-top: 0.5rem;
+}
+[data-theme="light"] .sys-bar {
+    background: #e8edf3;
+}
+.sys-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.6s ease, background-color 0.4s ease;
+}
+.sys-fill-cool { background: var(--oo-teal); }
+.sys-fill-warm { background: #f0ad4e; }
+.sys-fill-hot  { background: var(--oo-coral); }
+/* Initial colors before JS kicks in */
+.sys-fill-cpu  { background: var(--oo-teal); }
+.sys-fill-ram  { background: var(--oo-teal); }
+.sys-fill-disk { background: var(--oo-teal); }
+.sys-fill-temp { background: var(--oo-teal); }
+
 /* Feature badges */
 .stat-features {
     display: flex;

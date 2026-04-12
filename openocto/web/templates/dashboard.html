@@ -75,6 +75,60 @@
     </a>
 </div>
 
+<!-- ── System Resources ── -->
+<h3 style="margin-top: 2rem;">{{ t('dash.system') }}</h3>
+<div id="sys-info" class="card-grid card-grid-4">
+    <article class="dash-card">
+        <div class="dash-card-icon sys-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3"/></svg>
+        </div>
+        <div class="dash-card-body">
+            <div class="dash-card-label">CPU</div>
+            <div class="dash-card-value" id="sys-cpu">{{ sys.cpu_percent }}%</div>
+            <div class="sys-bar"><div class="sys-bar-fill sys-fill-cpu" id="sys-cpu-bar" style="width: {{ sys.cpu_percent }}%"></div></div>
+        </div>
+    </article>
+
+    <article class="dash-card">
+        <div class="dash-card-icon sys-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M6 19v-8a6 6 0 1 1 12 0v8"/><path d="M6 19h12"/></svg>
+        </div>
+        <div class="dash-card-body">
+            <div class="dash-card-label">RAM</div>
+            <div class="dash-card-value" id="sys-ram">{{ sys.ram_used_gb }} / {{ sys.ram_total_gb }} GB</div>
+            <div class="sys-bar"><div class="sys-bar-fill sys-fill-ram" id="sys-ram-bar" style="width: {{ sys.ram_percent }}%"></div></div>
+        </div>
+    </article>
+
+    <article class="dash-card">
+        <div class="dash-card-icon sys-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+        </div>
+        <div class="dash-card-body">
+            <div class="dash-card-label">{{ t('dash.disk') }}</div>
+            <div class="dash-card-value" id="sys-disk">{{ sys.disk_used_gb }} / {{ sys.disk_total_gb }} GB</div>
+            <div class="sys-bar"><div class="sys-bar-fill sys-fill-disk" id="sys-disk-bar" style="width: {{ sys.disk_percent }}%"></div></div>
+        </div>
+    </article>
+
+    <article class="dash-card">
+        <div class="dash-card-icon sys-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/></svg>
+        </div>
+        <div class="dash-card-body">
+            <div class="dash-card-label">{{ t('dash.temp') }}</div>
+            <div class="dash-card-value" id="sys-temp">{% if sys.cpu_temp is not none %}{{ sys.cpu_temp }}°C{% else %}—{% endif %}</div>
+            {% if sys.cpu_temp is not none %}
+            <div class="sys-bar"><div class="sys-bar-fill sys-fill-temp" id="sys-temp-bar" style="width: {{ [sys.cpu_temp, 100] | min }}%"></div></div>
+            {% endif %}
+        </div>
+    </article>
+</div>
+
 <!-- ── Statistics ── -->
 <h3 style="margin-top: 2rem;">{{ t('dash.statistics') }}</h3>
 
@@ -262,6 +316,35 @@
             badge.className = "state-badge";
         }
     };
+
+    /* Live system metrics — poll every 5s */
+    function updateSys() {
+        fetch("/api/system-info")
+            .then(r => r.json())
+            .then(d => {
+                const el = (id) => document.getElementById(id);
+                el("sys-cpu").textContent = d.cpu_percent + "%";
+                el("sys-cpu-bar").style.width = d.cpu_percent + "%";
+                el("sys-ram").textContent = d.ram_used_gb + " / " + d.ram_total_gb + " GB";
+                el("sys-ram-bar").style.width = d.ram_percent + "%";
+                el("sys-disk").textContent = d.disk_used_gb + " / " + d.disk_total_gb + " GB";
+                el("sys-disk-bar").style.width = d.disk_percent + "%";
+                if (d.cpu_temp !== null) {
+                    el("sys-temp").textContent = d.cpu_temp + "°C";
+                    const bar = el("sys-temp-bar");
+                    if (bar) bar.style.width = Math.min(d.cpu_temp, 100) + "%";
+                }
+                /* Color thresholds */
+                el("sys-cpu-bar").className = "sys-bar-fill sys-fill-" + (d.cpu_percent > 80 ? "hot" : d.cpu_percent > 50 ? "warm" : "cool");
+                el("sys-ram-bar").className = "sys-bar-fill sys-fill-" + (d.ram_percent > 80 ? "hot" : d.ram_percent > 50 ? "warm" : "cool");
+                el("sys-disk-bar").className = "sys-bar-fill sys-fill-" + (d.disk_percent > 85 ? "hot" : d.disk_percent > 60 ? "warm" : "cool");
+                const tempBar = el("sys-temp-bar");
+                if (tempBar && d.cpu_temp !== null)
+                    tempBar.className = "sys-bar-fill sys-fill-" + (d.cpu_temp > 75 ? "hot" : d.cpu_temp > 55 ? "warm" : "cool");
+            })
+            .catch(() => {});
+    }
+    setInterval(updateSys, 5000);
 })();
 </script>
 {% endblock %}

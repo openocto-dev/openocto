@@ -11,6 +11,43 @@ from aiohttp import web
 from openocto import __version__
 from openocto.config import USER_CONFIG_DIR, MODELS_DIR
 
+
+def _collect_system_info() -> dict:
+    """Gather CPU, RAM, disk and temperature info."""
+    info: dict = {
+        "cpu_percent": 0.0,
+        "ram_total_gb": 0.0,
+        "ram_used_gb": 0.0,
+        "ram_percent": 0.0,
+        "disk_total_gb": 0.0,
+        "disk_used_gb": 0.0,
+        "disk_free_gb": 0.0,
+        "disk_percent": 0.0,
+        "cpu_temp": None,
+    }
+    try:
+        import psutil
+        info["cpu_percent"] = psutil.cpu_percent(interval=0.5)
+        mem = psutil.virtual_memory()
+        info["ram_total_gb"] = round(mem.total / (1024 ** 3), 1)
+        info["ram_used_gb"] = round(mem.used / (1024 ** 3), 1)
+        info["ram_percent"] = mem.percent
+        disk = psutil.disk_usage("/")
+        info["disk_total_gb"] = round(disk.total / (1024 ** 3), 1)
+        info["disk_used_gb"] = round(disk.used / (1024 ** 3), 1)
+        info["disk_free_gb"] = round(disk.free / (1024 ** 3), 1)
+        info["disk_percent"] = round(disk.percent, 1)
+        temps = psutil.sensors_temperatures()
+        if temps:
+            # Raspberry Pi: 'cpu_thermal'; x86: 'coretemp'
+            for key in ("cpu_thermal", "cpu-thermal", "coretemp"):
+                if key in temps and temps[key]:
+                    info["cpu_temp"] = round(temps[key][0].current, 1)
+                    break
+    except ImportError:
+        pass
+    return info
+
 routes = web.RouteTableDef()
 
 
@@ -150,6 +187,12 @@ def _collect_stats(octo: object) -> dict:
     }
 
 
+@routes.get("/api/system-info")
+async def api_system_info(request: web.Request) -> web.Response:
+    """Return current system metrics as JSON (for live polling)."""
+    return web.json_response(_collect_system_info())
+
+
 @routes.get("/")
 @aiohttp_jinja2.template("dashboard.html")
 async def dashboard(request: web.Request) -> dict:
@@ -181,6 +224,7 @@ async def dashboard(request: web.Request) -> dict:
     backend = octo._config.ai.default_backend
 
     stats = _collect_stats(octo)
+    system_info = _collect_system_info()
 
     return {
         "page": "dashboard",
@@ -192,4 +236,5 @@ async def dashboard(request: web.Request) -> dict:
         "backend": backend,
         "web_port": octo._config.web.port,
         "stats": stats,
+        "sys": system_info,
     }

@@ -43,6 +43,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "dash.on": "On",
         "dash.off": "Off",
         "dash.system": "System",
+        "dash.disk": "Disk",
+        "dash.temp": "Temperature",
         "dash.not_set": "Not set",
         "dash.activity": "Activity (7 days)",
 
@@ -268,6 +270,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "dash.on": "Вкл",
         "dash.off": "Выкл",
         "dash.system": "Система",
+        "dash.disk": "Диск",
+        "dash.temp": "Температура",
         "dash.not_set": "Не задано",
         "dash.activity": "Активность (7 дней)",
 

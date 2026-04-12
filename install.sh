@@ -261,7 +261,7 @@ fi
 
 # 8. Install torch for Silero TTS (needed for Russian voice synthesis)
 echo ""
-read -r -p "$(echo -e "${CYAN}Install Russian voice synthesis (Silero TTS, ~200 MB)? [Y/n]: ${NC}")" INSTALL_TORCH </dev/tty
+ask INSTALL_TORCH "Install Russian voice synthesis (Silero TTS, ~200 MB)? [Y/n]: " "Y"
 if [[ ! "$INSTALL_TORCH" =~ ^[Nn]$ ]]; then
     info "Installing PyTorch (CPU) for Silero TTS..."
     .venv/bin/pip install --quiet torch --index-url https://download.pytorch.org/whl/cpu && ok "torch installed (Silero TTS ready)" || warn "Failed to install torch (Russian TTS won't work)"
