@@ -180,10 +180,22 @@ async def send_message(request: web.Request) -> web.Response:
             except Exception:
                 pass
 
+            # Bind per-request context for skills that need it (notes, timer, media_player).
+            skills = getattr(octo, "_skills", None)
+            if skills is not None:
+                skills.bind_context(
+                    history=hs,
+                    user_id=user_id,
+                    persona=persona_name,
+                    player=getattr(octo, "_player", None),
+                    loop=asyncio.get_event_loop(),
+                )
+
             reply = await octo._ai_router.send(
                 user_text=content,
                 history=ai_history,
                 system_prompt=system_prompt,
+                skills=skills,
             )
         except Exception as e:
             logger.error("AI chat error: %s", e)
@@ -198,8 +210,16 @@ async def send_message(request: web.Request) -> web.Response:
     # Save assistant response
     hs.add_message(user_id, persona_name, "assistant", reply)
 
-    # TTS playback — fire-and-forget so the text response arrives immediately
-    if tts_enabled and reply and not reply.startswith("[Error"):
+    # TTS playback — fire-and-forget so the text response arrives immediately.
+    # Skip wrapped errors ([Error: ...]) AND raw upstream error payloads that
+    # some proxies return as HTTP-200 chat content (auth failures, etc.).
+    from openocto.app import OpenOctoApp
+    if (
+        tts_enabled
+        and reply
+        and not reply.startswith("[Error")
+        and not OpenOctoApp._looks_like_error_response(reply)
+    ):
         asyncio.create_task(_tts_speak(octo, reply))
 
     return web.json_response({

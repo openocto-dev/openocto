@@ -16,6 +16,7 @@ from openocto.event_bus import EventBus, EventType
 from openocto.history import HistoryStore
 from openocto.memory import MemoryManager
 from openocto.persona.manager import Persona, PersonaManager
+from openocto.skills import SkillRegistry, build_default_registry
 from openocto.state_machine import State, StateMachine
 from openocto.utils.icons import (
     CHECK, CROSS, WARN, MIC, WRENCH, PLUG, USER, OCTOPUS,
@@ -53,6 +54,9 @@ class OpenOctoApp:
         self._memory: MemoryManager | None = None
         self._search = None
         self._current_user_id: int | None = None
+
+        # Skills (LLM-callable tools)
+        self._skills: SkillRegistry | None = None
 
         # Processing lock (shared by PTT and wake word modes)
         self._processing = False
@@ -154,6 +158,18 @@ class OpenOctoApp:
         self._ai_router = AIRouter(self._config.ai)
         self._ai_checked = False  # will check on first run()
 
+        # Skills (LLM tool-use)
+        try:
+            self._skills = build_default_registry(self._config.skills)
+            if len(self._skills) == 0:
+                logger.info("No skills enabled")
+                self._skills = None
+            else:
+                logger.info("Loaded %d skills: %s", len(self._skills), self._skills.names())
+        except Exception:
+            logger.exception("Failed to build skill registry; continuing without skills")
+            self._skills = None
+
         # Memory system
         if self._config.memory.enabled:
             search = None
@@ -182,6 +198,31 @@ class OpenOctoApp:
                 print("   Falling back to push-to-talk mode.\n")
 
         print(f"{CHECK} Ready!\n")
+
+    @staticmethod
+    def _looks_like_error_response(text: str) -> bool:
+        """Detect AI responses that are actually backend error payloads.
+
+        Some proxies (notably claude-max-proxy when its session expires)
+        return upstream errors as plain HTTP 200 chat completions instead
+        of raising — so the text reaches us as if it were the model's
+        answer.  We refuse to TTS these so the user doesn't hear an
+        authentication error read aloud in Russian.
+        """
+        if not text:
+            return False
+        head = text.lstrip()[:200].lower()
+        markers = (
+            "failed to authenticate",
+            "api error",
+            "authentication_error",
+            '"type":"error"',
+            '"type": "error"',
+            "unauthorized",
+            "401 ",
+            "403 ",
+        )
+        return any(m in head for m in markers)
 
     @staticmethod
     def _friendly_error(e: Exception) -> str:
@@ -507,8 +548,19 @@ class OpenOctoApp:
                 response_chunks.append(chunk)
                 print(chunk, end="", flush=True)
 
+            # Bind per-request context for skills that need user state.
+            if self._skills is not None:
+                self._skills.bind_context(
+                    history=self._history_store,
+                    user_id=uid,
+                    persona=persona_name,
+                    player=self._player,
+                    loop=self._loop,
+                )
+
             response = await self._ai_router.send_streaming(
-                result.text, history, system_prompt, on_chunk
+                result.text, history, system_prompt, on_chunk,
+                skills=self._skills,
             )
             if not spinner.done():
                 spinner.cancel()
@@ -537,6 +589,17 @@ class OpenOctoApp:
 
             await self._event_bus.publish(EventType.AI_RESPONSE, {"text": response})
             await self._state_machine.transition("response_ready")
+
+            # If the "response" is actually an upstream backend error
+            # (e.g. claude-proxy returning a 401 body as chat content),
+            # show it on screen but don't read it aloud — and treat the
+            # turn as failed so wake-word stays disarmed for a moment.
+            if self._looks_like_error_response(response):
+                logger.warning("Suppressing TTS for error-shaped response: %s", response[:200])
+                print(f"{WARN}  Backend returned an error — not speaking it aloud.")
+                await self._state_machine.transition("speech_done")
+                await self._event_bus.publish(EventType.TTS_FINISHED, {})
+                return
 
             # TTS — pick engine based on response language, not input language
             response_lang = self._detect_response_lang(response)
@@ -571,10 +634,22 @@ class OpenOctoApp:
         asyncio.ensure_future(self._auto_listen())
 
     def _cleanup(self) -> None:
-        """Kill child processes (proxy, web) on exit."""
+        """Kill child processes (proxy, web, skills) on exit."""
         # Cancel web server task
         if self._web_task and not self._web_task.done():
             self._web_task.cancel()
+        # Stop MCP server
+        mcp_server = getattr(self, "_mcp_server", None)
+        if mcp_server is not None and self._loop:
+            asyncio.run_coroutine_threadsafe(mcp_server.stop(), self._loop)
+        # Stop any running media players spawned by skills
+        if self._skills is not None:
+            media = self._skills.get("media_player")
+            if media is not None:
+                try:
+                    media.shutdown()  # type: ignore[attr-defined]
+                except Exception:
+                    logger.debug("media_player shutdown failed", exc_info=True)
         # Kill proxy (atexit may not fire on SIGHUP)
         from openocto.utils.proxy import _stop_proxy
         import subprocess
@@ -605,6 +680,20 @@ class OpenOctoApp:
                 self._web_task = asyncio.create_task(start_web_server(self))
             except ImportError:
                 logger.debug("Web admin not available (install openocto[web])")
+
+        # Start MCP server if enabled
+        self._mcp_server = None
+        if self._config.mcp.enabled:
+            try:
+                from openocto.mcp import MCPServer
+                self._mcp_server = MCPServer(self, self._config.mcp)
+                await self._mcp_server.start()
+                logger.info(
+                    "MCP server started on http://%s:%d/mcp",
+                    self._config.mcp.host, self._config.mcp.port,
+                )
+            except Exception:
+                logger.exception("Failed to start MCP server")
 
         # Health check: verify AI backend responds before starting
         print(f"{WRENCH} Checking AI backend ({self._ai_router.active_backend_name})...")

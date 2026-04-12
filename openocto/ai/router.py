@@ -9,6 +9,7 @@ from openocto.ai.base import AIBackend
 
 if TYPE_CHECKING:
     from openocto.config import AIConfig
+    from openocto.skills.base import SkillRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -109,6 +110,7 @@ class AIRouter:
         user_text: str,
         history: list[dict],
         system_prompt: str,
+        skills: SkillRegistry | None = None,
     ) -> str:
         """Send a user message and get a complete response.
 
@@ -116,10 +118,11 @@ class AIRouter:
             user_text: the current user message.
             history: previous messages (caller loads from DB).
             system_prompt: assembled system prompt (persona + memory context).
+            skills: optional skill registry for tool-use loop.
         """
         messages = [*history, {"role": "user", "content": user_text}]
         backend = self.get_backend()
-        return await backend.send(messages, system_prompt)
+        return await backend.send(messages, system_prompt, skills=skills)
 
     async def send_streaming(
         self,
@@ -127,6 +130,7 @@ class AIRouter:
         history: list[dict],
         system_prompt: str,
         on_chunk: Callable[[str], Awaitable[None]],
+        skills: SkillRegistry | None = None,
     ) -> str:
         """Send a user message and stream the response.
 
@@ -135,7 +139,10 @@ class AIRouter:
             history: previous messages (caller loads from DB).
             system_prompt: assembled system prompt (persona + memory context).
             on_chunk: callback for each streamed token.
+            skills: optional skill registry for tool-use loop.
         """
         messages = [*history, {"role": "user", "content": user_text}]
         backend = self.get_backend()
-        return await backend.send_streaming(messages, system_prompt, on_chunk)
+        return await backend.send_streaming(
+            messages, system_prompt, on_chunk, skills=skills,
+        )

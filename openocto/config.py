@@ -116,9 +116,63 @@ class WakeWordConfig(BaseModel):
     cooldown: float = 2.0           # seconds between detections
 
 
+# --- Skill subsection configs ---
+
+
+class TimeSkillConfig(BaseModel):
+    default_timezone: str | None = None  # IANA name; null = host local
+
+
+class WeatherSkillConfig(BaseModel):
+    default_location: str | None = None
+    units: str = "metric"  # metric | imperial
+
+
+class FileOpsSkillConfig(BaseModel):
+    allowed_dirs: list[str] = Field(default_factory=lambda: [
+        "~/Videos", "~/Movies", "~/Music", "~/Downloads",
+        "~/Documents", "~/Pictures",
+    ])
+
+
+class LauncherSkillConfig(BaseModel):
+    # vlc/mpv intentionally excluded — use media_player skill for media so
+    # the LLM gets pause/stop/seek/volume control instead of a fire-and-forget spawn.
+    allowed_apps: list[str] = Field(default_factory=lambda: [
+        "firefox", "chromium", "chromium-browser", "code",
+    ])
+
+
+class MediaPlayerSkillConfig(BaseModel):
+    binary: str | None = None         # explicit path to vlc, null = auto-discover
+    rc_port: int = 9919
+    fullscreen_default: bool = True
+
+
+class SkillsConfig(BaseModel):
+    enabled: list[str] = Field(default_factory=lambda: [
+        "time", "weather", "unit_converter", "notes", "timer",
+        "file_ops", "launcher", "media_player",
+    ])
+    time: TimeSkillConfig = Field(default_factory=TimeSkillConfig)
+    weather: WeatherSkillConfig = Field(default_factory=WeatherSkillConfig)
+    file_ops: FileOpsSkillConfig = Field(default_factory=FileOpsSkillConfig)
+    launcher: LauncherSkillConfig = Field(default_factory=LauncherSkillConfig)
+    media_player: MediaPlayerSkillConfig = Field(default_factory=MediaPlayerSkillConfig)
+
+
+class MCPConfig(BaseModel):
+    enabled: bool = False
+    host: str = "0.0.0.0"
+    port: int = 8765
+    require_auth: bool = True
+
+
 class LoggingConfig(BaseModel):
     level: str = "INFO"
     file: str | None = None
+    max_bytes: int = 5 * 1024 * 1024   # 5 MB per file
+    backup_count: int = 3              # rotated files kept
 
 
 class WebConfig(BaseModel):
@@ -137,7 +191,9 @@ class AppConfig(BaseModel):
     tts: TTSConfig = Field(default_factory=TTSConfig)
     ai: AIConfig = Field(default_factory=AIConfig)
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
+    skills: SkillsConfig = Field(default_factory=SkillsConfig)
     web: WebConfig = Field(default_factory=WebConfig)
+    mcp: MCPConfig = Field(default_factory=MCPConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
 
 

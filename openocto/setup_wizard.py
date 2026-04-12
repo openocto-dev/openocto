@@ -286,10 +286,13 @@ def _run_custom_setup(from_step: int = 1) -> None:
 
 
 def _finish() -> None:
-    """Show completion message and offer to launch."""
+    """Show completion message, offer MCP registration, and offer to launch."""
     click.echo()
     click.secho(f"{CHECK} Setup complete!", fg="green", bold=True)
     click.echo()
+
+    # --- MCP registration ---
+    _step_register_mcp()
 
     click.echo("  To start later, run:")
     click.secho("    openocto start", fg="yellow")
@@ -304,6 +307,197 @@ def _finish() -> None:
         config = load_config()
         app = OpenOctoApp(config)
         asyncio.run(app.run())
+
+
+def _step_register_mcp() -> None:
+    """Offer to register OpenOcto MCP server with AI coding clients."""
+    import socket
+    import subprocess
+
+    from openocto.config import load_config
+    from openocto.mcp.auth import get_or_create_token
+
+    config = load_config()
+
+    # Only offer if MCP is enabled in config
+    if not config.mcp.enabled:
+        click.echo("  Tip: enable MCP server in config to use OpenOcto skills")
+        click.echo("  from Claude CLI, Cursor, VS Code and other MCP clients.")
+        click.echo()
+        if not click.confirm("  Enable MCP server now?", default=False):
+            click.echo()
+            return
+        # Enable in user config
+        import yaml
+        from openocto.config import USER_CONFIG_PATH
+        existing: dict = {}
+        if USER_CONFIG_PATH.exists():
+            with open(USER_CONFIG_PATH) as f:
+                existing = yaml.safe_load(f) or {}
+        existing.setdefault("mcp", {})["enabled"] = True
+        existing["mcp"].setdefault("host", "0.0.0.0")
+        existing["mcp"].setdefault("port", 8765)
+        existing["mcp"].setdefault("require_auth", True)
+        with open(USER_CONFIG_PATH, "w") as f:
+            yaml.dump(existing, f, default_flow_style=False, allow_unicode=True)
+        click.secho(f"  {CHECK} MCP enabled on port 8765", fg="green")
+        click.echo()
+        # Reload
+        config = load_config()
+
+    port = config.mcp.port
+    token = get_or_create_token()
+
+    # Detect LAN IP
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        lan_ip = s.getsockname()[0]
+        s.close()
+    except Exception:
+        lan_ip = "127.0.0.1"
+
+    local_url = f"http://localhost:{port}/mcp"
+    lan_url = f"http://{lan_ip}:{port}/mcp"
+    auth_header = f"Authorization: Bearer {token}"
+
+    click.secho("  MCP Server — connect AI clients to OpenOcto skills", bold=True)
+    click.echo(f"  URL (local):  {local_url}")
+    click.echo(f"  URL (LAN):    {lan_url}")
+    click.echo()
+
+    if not click.confirm("  Register MCP server with AI clients now?", default=True):
+        click.echo()
+        return
+
+    # Detect which clients are installed
+    clients: list[tuple[str, str]] = []
+    if shutil.which("claude"):
+        clients.append(("claude", "Claude CLI (claude.ai)"))
+    if shutil.which("cursor"):
+        clients.append(("cursor", "Cursor"))
+    if shutil.which("code"):
+        clients.append(("vscode", "VS Code (via Continue extension)"))
+    if shutil.which("zed"):
+        clients.append(("zed", "Zed"))
+    clients.append(("manual", "Show instructions (copy-paste)"))
+
+    click.echo()
+    for i, (_, label) in enumerate(clients, 1):
+        click.echo(f"  [{i}] {label}")
+    click.echo()
+
+    raw = click.prompt(
+        "  Select clients to register (e.g. 1 2 3, or Enter to skip)",
+        default="",
+    ).strip()
+
+    if not raw:
+        click.echo()
+        return
+
+    selected_indices = []
+    for part in raw.split():
+        try:
+            idx = int(part) - 1
+            if 0 <= idx < len(clients):
+                selected_indices.append(idx)
+        except ValueError:
+            pass
+
+    click.echo()
+    for idx in selected_indices:
+        client_id, label = clients[idx]
+        _register_mcp_client(client_id, label, local_url, lan_url, auth_header, token, port)
+
+    click.echo()
+
+
+def _register_mcp_client(
+    client_id: str, label: str,
+    local_url: str, lan_url: str,
+    auth_header: str, token: str, port: int,
+) -> None:
+    import subprocess
+
+    click.secho(f"  {label}:", bold=True)
+
+    if client_id == "claude":
+        # claude mcp add --transport http -H "Authorization: Bearer ..." openocto <url>
+        cmd = [
+            "claude", "mcp", "add",
+            "--transport", "http",
+            "--scope", "user",
+            "-H", auth_header,
+            "openocto", local_url,
+        ]
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+            if result.returncode == 0:
+                click.secho(f"  {CHECK} Registered! Tools available as mcp__openocto__*", fg="green")
+            else:
+                err = (result.stderr or result.stdout).strip()
+                # Already registered — update
+                if "already" in err.lower() or "exists" in err.lower():
+                    subprocess.run(
+                        ["claude", "mcp", "remove", "openocto", "--scope", "user"],
+                        capture_output=True, timeout=10,
+                    )
+                    subprocess.run(cmd, capture_output=True, timeout=15)
+                    click.secho(f"  {CHECK} Updated existing registration.", fg="green")
+                else:
+                    click.secho(f"  {WARN}  Failed: {err}", fg="yellow")
+                    _print_claude_manual(local_url, auth_header)
+        except FileNotFoundError:
+            click.secho(f"  {WARN}  `claude` not found on PATH. Manual instructions:", fg="yellow")
+            _print_claude_manual(local_url, auth_header)
+        except Exception as e:
+            click.secho(f"  {WARN}  Error: {e}", fg="yellow")
+            _print_claude_manual(local_url, auth_header)
+
+    elif client_id == "cursor":
+        click.echo("  Add to Cursor Settings → MCP → Add Server:")
+        click.echo(f'    Name:    openocto')
+        click.echo(f'    URL:     {local_url}')
+        click.echo(f'    Header:  {auth_header}')
+
+    elif client_id == "vscode":
+        click.echo("  Add to VS Code settings.json (Continue extension):")
+        click.echo('    "mcpServers": {')
+        click.echo('      "openocto": {')
+        click.echo('        "transport": "http",')
+        click.echo(f'        "url": "{local_url}",')
+        click.echo('        "headers": {')
+        click.echo(f'          "Authorization": "Bearer {token}"')
+        click.echo('        }')
+        click.echo('      }')
+        click.echo('    }')
+
+    elif client_id == "zed":
+        click.echo("  Add to Zed settings.json:")
+        click.echo('    "context_servers": {')
+        click.echo('      "openocto": {')
+        click.echo(f'        "url": "{local_url}",')
+        click.echo(f'        "token": "{token}"')
+        click.echo('      }')
+        click.echo('    }')
+
+    elif client_id == "manual":
+        click.echo("  MCP server details for any client:")
+        click.echo(f"    Local URL: {local_url}")
+        click.echo(f"    LAN URL:   {lan_url}")
+        click.echo(f"    Auth:      {auth_header}")
+        click.echo()
+        _print_claude_manual(local_url, auth_header)
+
+    click.echo()
+
+
+def _print_claude_manual(url: str, auth_header: str) -> None:
+    click.echo("  Claude CLI command:")
+    click.echo(f'    claude mcp add --transport http --scope user \\')
+    click.echo(f'      -H "{auth_header}" \\')
+    click.echo(f'      openocto {url}')
 
 
 def _load_existing_config() -> dict:

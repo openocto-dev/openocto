@@ -7,8 +7,9 @@ completions API format.
 
 from __future__ import annotations
 
+import json
 import logging
-from typing import TYPE_CHECKING, Awaitable, Callable
+from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
 import openai
 
@@ -16,12 +17,17 @@ from openocto.ai.base import AIBackend
 
 if TYPE_CHECKING:
     from openocto.config import ProviderConfig
+    from openocto.skills.base import SkillRegistry
 
 logger = logging.getLogger(__name__)
+
+_MAX_TOOL_ITERATIONS = 6
 
 
 class OpenAICompatBackend(AIBackend):
     """AI backend for any OpenAI-compatible API."""
+
+    supports_tools = True
 
     def __init__(
         self,
@@ -54,8 +60,17 @@ class OpenAICompatBackend(AIBackend):
             no_auth=config.no_auth,
         )
 
-    async def send(self, messages: list[dict], system_prompt: str) -> str:
+    async def send(
+        self,
+        messages: list[dict],
+        system_prompt: str,
+        skills: SkillRegistry | None = None,
+    ) -> str:
         all_messages = [{"role": "system", "content": system_prompt}, *messages]
+
+        if skills and len(skills) > 0:
+            return await self._tool_loop(all_messages, skills)
+
         response = await self._client.chat.completions.create(
             model=self._model,
             messages=all_messages,
@@ -69,10 +84,14 @@ class OpenAICompatBackend(AIBackend):
         messages: list[dict],
         system_prompt: str,
         on_chunk: Callable[[str], Awaitable[None]],
+        skills: SkillRegistry | None = None,
     ) -> str:
         all_messages = [{"role": "system", "content": system_prompt}, *messages]
-        full_text = []
 
+        if skills and len(skills) > 0:
+            return await self._tool_loop(all_messages, skills, on_chunk=on_chunk)
+
+        full_text = []
         stream = await self._client.chat.completions.create(
             model=self._model,
             messages=all_messages,
@@ -86,3 +105,68 @@ class OpenAICompatBackend(AIBackend):
                 await on_chunk(delta)
 
         return "".join(full_text)
+
+    # ── Tool-use loop ──────────────────────────────────────────────────
+
+    async def _tool_loop(
+        self,
+        messages: list[dict[str, Any]],
+        skills: SkillRegistry,
+        on_chunk: Callable[[str], Awaitable[None]] | None = None,
+    ) -> str:
+        """Run an OpenAI function-calling loop until a final assistant text.
+
+        On each iteration we send the running conversation with ``tools``;
+        if the model returns ``tool_calls``, we execute each, append a
+        ``tool`` message with the result, and loop.
+        """
+        convo: list[dict[str, Any]] = list(messages)
+        tools = skills.openai_tools()
+
+        for _ in range(_MAX_TOOL_ITERATIONS):
+            response = await self._client.chat.completions.create(
+                model=self._model,
+                messages=convo,
+                tools=tools,
+            )
+            msg = response.choices[0].message
+            tool_calls = getattr(msg, "tool_calls", None) or []
+
+            if not tool_calls:
+                text = msg.content or ""
+                if on_chunk and text:
+                    await on_chunk(text)
+                return text
+
+            # Persist the assistant tool-call turn.
+            convo.append({
+                "role": "assistant",
+                "content": msg.content or "",
+                "tool_calls": [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {
+                            "name": tc.function.name,
+                            "arguments": tc.function.arguments,
+                        },
+                    }
+                    for tc in tool_calls
+                ],
+            })
+
+            for tc in tool_calls:
+                try:
+                    args = json.loads(tc.function.arguments or "{}")
+                except json.JSONDecodeError:
+                    args = {}
+                logger.info("Tool call: %s(%s)", tc.function.name, args)
+                result = await skills.call(tc.function.name, args)
+                convo.append({
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "content": result,
+                })
+
+        logger.warning("Tool loop hit max iterations (%d)", _MAX_TOOL_ITERATIONS)
+        return "Sorry, I got stuck in a tool loop."

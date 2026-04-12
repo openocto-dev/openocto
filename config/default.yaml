@@ -113,13 +113,67 @@ memory:
   search_half_life_days: 30   # temporal decay half-life for search results
   semantic_search: true       # enable vector search (requires openocto[search])
 
+# Skills (LLM-callable capabilities — wired into the AI tool-use loop)
+skills:
+  enabled:
+    - time
+    - weather
+    - unit_converter
+    - notes
+    - timer
+    - file_ops
+    - launcher
+    - media_player
+
+  time:
+    default_timezone: null      # null = host local time, or e.g. "Europe/Moscow"
+
+  weather:
+    default_location: null      # e.g. "Москва" or "Berlin"
+    units: metric               # metric | imperial
+
+  file_ops:
+    allowed_dirs:
+      - "~/Videos"
+      - "~/Movies"
+      - "~/Music"
+      - "~/Downloads"
+      - "~/Documents"
+      - "~/Pictures"
+
+  launcher:
+    # vlc/mpv intentionally NOT here — use media_player skill for video/audio
+    # playback so the LLM can control pause/stop/seek/volume. The launcher is
+    # only for non-media apps (browser, editor, etc.).
+    allowed_apps:
+      - firefox
+      - chromium
+      - chromium-browser
+      - code
+
+  media_player:
+    binary: null                # null = auto-discover vlc on PATH
+    rc_port: 9919
+    fullscreen_default: true
+
 # Web Admin
 web:
   enabled: true
   host: "0.0.0.0"
   port: 8080
 
+# MCP (Model Context Protocol) server
+# Expose skills as MCP tools — usable from Claude CLI, VS Code, and other MCP clients.
+# LAN access: configure Claude CLI with `claude mcp add openocto http://<ip>:8765/mcp`
+mcp:
+  enabled: false               # set true to start MCP server alongside web
+  host: "0.0.0.0"             # bind to all interfaces for LAN access
+  port: 8765
+  require_auth: true           # token in ~/.openocto/mcp-token (chmod 600)
+
 # Logging
 logging:
   level: "INFO"
-  file: null
+  file: null                    # e.g. "~/.openocto/logs/openocto.log" — enables rotating file handler
+  max_bytes: 5242880            # 5 MB
+  backup_count: 3

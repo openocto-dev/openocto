@@ -35,12 +35,15 @@ def start(persona: str | None, ai: str | None, user_name: str | None, config_pat
     """Start OpenOcto voice assistant."""
     import asyncio
     from openocto.app import OpenOctoApp
+    from openocto.utils.logging_setup import setup_logging
 
     config = load_config(config_path)
     if persona:
         config.persona = persona
     if ai:
         config.ai.default_backend = ai
+
+    setup_logging(config.logging)
 
     app = OpenOctoApp(config, user_name=user_name)
     asyncio.run(app.run(web_enabled=not no_web))
@@ -52,6 +55,8 @@ def start(persona: str | None, ai: str | None, user_name: str | None, config_pat
 def web(host: str, port: int) -> None:
     """Start web admin panel only (no voice pipeline)."""
     import asyncio
+    from openocto.utils.logging_setup import setup_logging
+    setup_logging(load_config().logging)
 
     async def _run_web() -> None:
         try:
@@ -96,6 +101,8 @@ def web(host: str, port: int) -> None:
             _persona=None,
             _memory=None,
             _ai_router=None,
+            _skills=None,
+            _player=None,
         )
 
         # Resolve current user if any exist
@@ -133,11 +140,29 @@ def web(host: str, port: int) -> None:
         except Exception as e:
             logger.warning("AI router not available: %s", e)
 
+        # Initialize skills registry
+        try:
+            from openocto.skills import build_default_registry
+            octo._skills = build_default_registry(config.skills)
+        except Exception as e:
+            logger.warning("Skills not available: %s", e)
+
         app = create_web_app(octo)
         runner = aio_web.AppRunner(app)
         await runner.setup()
         site = aio_web.TCPSite(runner, host, port)
         await site.start()
+
+        # Start MCP server if enabled
+        mcp_server = None
+        if config.mcp.enabled:
+            try:
+                from openocto.mcp import MCPServer
+                mcp_server = MCPServer(octo, config.mcp)
+                await mcp_server.start()
+                click.echo(f"  MCP server: http://localhost:{config.mcp.port}/mcp")
+            except Exception as e:
+                logger.warning("MCP server not available: %s", e)
 
         click.echo(f"\n  \U0001f310 Web admin: http://localhost:{port}\n")
         try:
@@ -146,6 +171,8 @@ def web(host: str, port: int) -> None:
         except (KeyboardInterrupt, asyncio.CancelledError):
             pass
         finally:
+            if mcp_server:
+                await mcp_server.stop()
             await runner.cleanup()
 
     asyncio.run(_run_web())
@@ -283,6 +310,64 @@ def user_default(name: str) -> None:
         raise SystemExit(1)
     store.set_default_user(user["id"])
     click.secho(f"'{user['name']}' is now the default user.", fg="green")
+
+
+@main.group(name="mcp")
+def mcp_group() -> None:
+    """MCP (Model Context Protocol) server management."""
+
+
+@mcp_group.command(name="token")
+@click.option("--reset", is_flag=True, help="Generate a new token (invalidates existing)")
+def mcp_token(reset: bool) -> None:
+    """Show (or reset) the MCP Bearer token."""
+    from openocto.mcp.auth import _TOKEN_PATH, get_or_create_token
+
+    if reset and _TOKEN_PATH.exists():
+        _TOKEN_PATH.unlink()
+        click.secho("Token revoked. Generating a new one...", fg="yellow")
+
+    token = get_or_create_token()
+    click.echo(f"\nMCP Bearer token:\n\n  {token}\n")
+    click.secho(
+        "Use this token in the Authorization header:\n"
+        "  Authorization: Bearer <token>",
+        fg="cyan",
+    )
+
+
+@mcp_group.command(name="url")
+@click.option("--config", "config_path", default=None, help="Path to config file")
+def mcp_url(config_path: str | None) -> None:
+    """Show the MCP server URL and connection instructions."""
+    import socket
+
+    config = load_config(config_path)
+    port = config.mcp.port
+    enabled = config.mcp.enabled
+
+    # Determine LAN IP for remote clients
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        lan_ip = s.getsockname()[0]
+        s.close()
+    except Exception:
+        lan_ip = "127.0.0.1"
+
+    click.echo(f"\nMCP server port: {port}")
+    click.echo(f"Status: {'enabled' if enabled else 'disabled (set mcp.enabled: true in config)'}\n")
+    click.echo("Local URL (Pi itself):")
+    click.echo(f"  http://localhost:{port}/mcp\n")
+    click.echo("LAN URL (from Mac / other devices):")
+    click.echo(f"  http://{lan_ip}:{port}/mcp\n")
+    click.echo("Configure Claude CLI on any device:")
+    click.echo(f"  claude mcp add openocto http://{lan_ip}:{port}/mcp --transport http")
+    click.echo("  # Then add the bearer token when prompted, or set:")
+    click.echo(f"  claude mcp add openocto http://{lan_ip}:{port}/mcp --transport http \\")
+    click.echo("    --header 'Authorization: Bearer <token>'\n")
+    click.echo("Get your token:")
+    click.echo("  openocto mcp token\n")
 
 
 @main.group(name="config")
