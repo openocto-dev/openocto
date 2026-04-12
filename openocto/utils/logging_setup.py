@@ -48,6 +48,10 @@ def setup_logging(config: LoggingConfig) -> None:
         except OSError as e:
             root.warning("Could not open log file %s: %s", log_path, e)
 
+    # Silence noisy third-party loggers — aiohttp.access logs every HTTP
+    # request at INFO, which spams the console once chat polling kicks in.
+    logging.getLogger("aiohttp.access").setLevel(logging.WARNING)
+
 
 def _parse_level(level: str) -> int:
     return getattr(logging, level.upper(), logging.INFO)

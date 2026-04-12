@@ -153,7 +153,7 @@ async def send_message(request: web.Request) -> web.Response:
         return web.json_response({"error": "No active user"}, status=400)
 
     # Save user message
-    hs.add_message(user_id, persona_name, "user", content)
+    user_msg_id = hs.add_message(user_id, persona_name, "user", content)
 
     # Try to get AI response
     reply = ""
@@ -208,7 +208,7 @@ async def send_message(request: web.Request) -> web.Response:
         reply = "[AI backend not configured. Start OpenOcto with `openocto start` for full functionality.]"
 
     # Save assistant response
-    hs.add_message(user_id, persona_name, "assistant", reply)
+    assistant_msg_id = hs.add_message(user_id, persona_name, "assistant", reply)
 
     # TTS playback — fire-and-forget so the text response arrives immediately.
     # Skip wrapped errors ([Error: ...]) AND raw upstream error payloads that
@@ -225,7 +225,39 @@ async def send_message(request: web.Request) -> web.Response:
     return web.json_response({
         "role": "assistant",
         "content": reply,
+        "user_msg_id": user_msg_id,
+        "assistant_msg_id": assistant_msg_id,
     })
+
+
+@routes.get("/api/messages/poll")
+async def poll_messages(request: web.Request) -> web.Response:
+    """Return messages newer than ?after_id= for the given user+persona.
+
+    Used by the web chat UI to keep multiple browser tabs in sync — when
+    one client (or the voice pipeline) appends a message, others pick it
+    up on the next poll without re-rendering the full history.
+    """
+    octo = request.app["octo"]
+    hs = octo._history_store
+    if not hs:
+        return web.json_response({"messages": []})
+
+    try:
+        user_id = int(request.query.get("user_id") or octo._current_user_id or 0)
+        after_id = int(request.query.get("after_id", "0"))
+    except ValueError:
+        return web.json_response({"error": "Invalid user_id or after_id"}, status=400)
+
+    persona = request.query.get("persona") or (
+        octo._persona.name if octo._persona else "octo"
+    )
+
+    if not user_id:
+        return web.json_response({"messages": []})
+
+    new_messages = hs.get_messages_after(user_id, persona, after_id, limit=100)
+    return web.json_response({"messages": new_messages})
 
 
 @routes.post("/api/messages/clear")

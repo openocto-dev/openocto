@@ -242,20 +242,44 @@ class HistoryStore:
 
     def get_recent_messages(
         self, user_id: int, persona: str, limit: int = 20,
-    ) -> list[dict[str, str]]:
+    ) -> list[dict[str, Any]]:
         """Return last *limit* messages for user+persona, oldest-first.
 
-        Returns dicts with 'role' and 'content' keys — ready for AI backends.
+        Returns dicts with id, role, content, created_at — ready for AI
+        backends (which only read role+content) and for the web UI.
         """
         rows = self._conn.execute(
-            "SELECT role, content, created_at FROM ("
+            "SELECT id, role, content, created_at FROM ("
             "  SELECT role, content, created_at, id FROM messages "
             "  WHERE user_id = ? AND persona = ? "
             "  ORDER BY id DESC LIMIT ?"
             ") sub ORDER BY id ASC",
             (user_id, persona, limit * 2),  # limit is in turns, *2 for messages
         ).fetchall()
-        return [{"role": r["role"], "content": r["content"], "created_at": r["created_at"]} for r in rows]
+        return [
+            {"id": r["id"], "role": r["role"], "content": r["content"], "created_at": r["created_at"]}
+            for r in rows
+        ]
+
+    def get_messages_after(
+        self, user_id: int, persona: str, after_id: int, limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """Return messages with id > *after_id* for user+persona, oldest-first.
+
+        Used by the web UI's polling endpoint to fetch only new messages
+        since the client's last known id — keeps the chat live without
+        re-rendering the whole history.
+        """
+        rows = self._conn.execute(
+            "SELECT id, role, content, created_at FROM messages "
+            "WHERE user_id = ? AND persona = ? AND id > ? "
+            "ORDER BY id ASC LIMIT ?",
+            (user_id, persona, after_id, limit),
+        ).fetchall()
+        return [
+            {"id": r["id"], "role": r["role"], "content": r["content"], "created_at": r["created_at"]}
+            for r in rows
+        ]
 
     def clear_history(
         self, user_id: int, persona: str | None = None,

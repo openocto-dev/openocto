@@ -82,7 +82,7 @@
                     </div>
                 {% endif %}
             {% endif %}
-        <div class="chat-bubble chat-{{ msg.role }}">
+        <div class="chat-bubble chat-{{ msg.role }}" data-msg-id="{{ msg.id }}">
             <div class="chat-bubble-content">
                 {% if msg.created_at %}
                 <div class="chat-bubble-time">{{ msg.created_at[11:16] }}</div>
@@ -135,6 +135,19 @@
     var userId = {{ user_id or 'null' }};
     var persona = '{{ persona }}';
     var connError = '{{ t("common.connection_error") }}';
+    var POLL_INTERVAL_MS = 5000;
+
+    // Track the highest message id we've already rendered, so polling can
+    // skip it. Initialized from the server-rendered bubbles.
+    var latestMessageId = (function() {
+        var bubbles = messages.querySelectorAll('.chat-bubble[data-msg-id]');
+        var max = 0;
+        bubbles.forEach(function(b) {
+            var id = parseInt(b.getAttribute('data-msg-id'), 10);
+            if (id > max) max = id;
+        });
+        return max;
+    })();
 
     if (!input) return;
 
@@ -194,11 +207,12 @@
     }
 
     // Add a bubble to the chat
-    function addBubble(role, content, time) {
+    function addBubble(role, content, time, msgId) {
         maybeAddDateSeparator();
         var displayTime = time ? time.substring(11, 16) : nowTime();
         var div = document.createElement('div');
         div.className = 'chat-bubble chat-' + role;
+        if (msgId) div.setAttribute('data-msg-id', msgId);
         div.innerHTML =
             '<div class="chat-bubble-content">' +
                 '<div class="chat-bubble-time">' + displayTime + '</div>' +
@@ -247,7 +261,20 @@
         .then(function(data) {
             messages.removeChild(typing);
             if (data.content) {
-                addBubble('assistant', data.content);
+                addBubble('assistant', data.content, null, data.assistant_msg_id);
+                // Bump the cursor so the next poll won't re-render this pair.
+                if (data.assistant_msg_id) {
+                    latestMessageId = Math.max(latestMessageId, data.assistant_msg_id);
+                }
+                // Tag the optimistic user bubble (the second-to-last) with its
+                // real id so subsequent polls won't duplicate it.
+                if (data.user_msg_id) {
+                    var bubbles = messages.querySelectorAll('.chat-bubble');
+                    var prev = bubbles[bubbles.length - 2];
+                    if (prev && !prev.getAttribute('data-msg-id')) {
+                        prev.setAttribute('data-msg-id', data.user_msg_id);
+                    }
+                }
             } else if (data.error) {
                 addBubble('assistant', '[' + data.error + ']');
             }
@@ -270,6 +297,34 @@
             sendMessage();
         }
     });
+
+    // ── Live-sync polling ──────────────────────────────────────────────
+    // Pull messages newer than `latestMessageId` so other clients (the Pi
+    // browser, the voice pipeline) appear here without a manual refresh.
+    function pollNewMessages() {
+        if (!userId) return;
+        var url = '/api/messages/poll?user_id=' + encodeURIComponent(userId)
+                + '&persona=' + encodeURIComponent(persona)
+                + '&after_id=' + latestMessageId;
+        fetch(url, { headers: { 'Accept': 'application/json' } })
+            .then(function(r) { return r.ok ? r.json() : null; })
+            .then(function(data) {
+                if (!data || !data.messages || !data.messages.length) return;
+                // Don't yank the user away if they're scrolled up reading history.
+                var nearBottom = (messages.scrollHeight - messages.scrollTop - messages.clientHeight) < 80;
+                var savedScroll = messages.scrollTop;
+                data.messages.forEach(function(m) {
+                    if (m.id <= latestMessageId) return;
+                    addBubble(m.role, m.content, m.created_at, m.id);
+                    latestMessageId = m.id;
+                });
+                if (!nearBottom) {
+                    messages.scrollTop = savedScroll;
+                }
+            })
+            .catch(function() { /* network blip — try again next tick */ });
+    }
+    setInterval(pollNewMessages, POLL_INTERVAL_MS);
 
     // Focus input on load
     input.focus();
