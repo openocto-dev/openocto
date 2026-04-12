@@ -1,5 +1,16 @@
 # OpenOcto API Reference
 
+> **Building a mobile app or external client?** You probably want
+> [api-v1-reference.md](api-v1-reference.md) instead — it documents
+> the versioned, Bearer-token-authenticated JSON API at `/api/v1/*`,
+> built specifically for non-browser consumers.
+>
+> **This document** describes the *internal* HTTP routes used by the
+> htmx-based web admin UI: form-action handlers (which return 302
+> redirects with flash messages), the dashboard polling endpoints,
+> and the live WebSocket. They're not a stable contract for external
+> clients and may change shape without notice.
+
 Base URL: `http://<host>:8080` (default)
 
 All JSON API endpoints return `Content-Type: application/json`.  

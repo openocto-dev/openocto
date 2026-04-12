@@ -370,6 +370,54 @@ def mcp_url(config_path: str | None) -> None:
     click.echo("  openocto mcp token\n")
 
 
+@main.group(name="api")
+def api_group() -> None:
+    """JSON API (/api/v1/*) — token + URL helpers for mobile/external clients."""
+
+
+@api_group.command(name="token")
+@click.option("--reset", is_flag=True, help="Generate a new token (revokes existing)")
+def api_token(reset: bool) -> None:
+    """Show (or reset) the JSON API Bearer token."""
+    from openocto.web.api_auth import get_or_create_api_token, revoke_api_token
+
+    if reset:
+        revoke_api_token()
+        click.secho("Token revoked. Generating a new one...", fg="yellow")
+
+    token = get_or_create_api_token()
+    click.echo(f"\nJSON API Bearer token:\n\n  {token}\n")
+    click.secho(
+        "Use this token in the Authorization header:\n"
+        "  Authorization: Bearer <token>",
+        fg="cyan",
+    )
+
+
+@api_group.command(name="url")
+@click.option("--config", "config_path", default=None, help="Path to config file")
+def api_url(config_path: str | None) -> None:
+    """Show JSON API base URLs and a sample curl command."""
+    import socket
+    config = load_config(config_path)
+    port = config.web.port
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        lan_ip = s.getsockname()[0]
+        s.close()
+    except Exception:
+        lan_ip = "127.0.0.1"
+
+    click.echo(f"\nJSON API base URLs:")
+    click.echo(f"  Local: http://localhost:{port}/api/v1")
+    click.echo(f"  LAN:   http://{lan_ip}:{port}/api/v1\n")
+    click.echo("Sample request:")
+    click.echo(f"  curl -H 'Authorization: Bearer <token>' http://{lan_ip}:{port}/api/v1/status")
+    click.echo(f"\nGet your token:")
+    click.echo("  openocto api token\n")
+
+
 @main.group(name="config")
 def config_group() -> None:
     """Configuration management."""
