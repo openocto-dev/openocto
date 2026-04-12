@@ -168,6 +168,45 @@ class MCPConfig(BaseModel):
     require_auth: bool = True
 
 
+class MDNSConfig(BaseModel):
+    """mDNS / Bonjour service publishing — makes the device discoverable as
+    `<hostname>.local` on the LAN without DHCP/DNS configuration.
+    """
+    enabled: bool = True
+    # The .local hostname OpenOcto announces. Default is derived from the
+    # system hostname so multiple instances on the same network don't
+    # collide on `openocto.local`. Override in user config to pick a
+    # custom name like "kitchen-octo".
+    hostname: str = Field(default_factory=lambda: _default_mdns_hostname())
+    # Friendly name shown in service browsers (Bonjour browser, mobile UI).
+    service_name: str = "OpenOcto Voice Assistant"
+
+
+def _default_mdns_hostname() -> str:
+    """Build a unique default mDNS hostname from the system hostname.
+
+    - "raspberrypi" → "openocto-raspberrypi"
+    - "kitchen-pi"  → "openocto-kitchen-pi"
+    - "localhost"   → "openocto" (no suffix worth adding)
+
+    The result is sanitized to mDNS-safe chars [a-z0-9-] so it always
+    fits inside a `<name>.local.` label.
+    """
+    import re
+    import socket as _sock
+    raw = (_sock.gethostname() or "").strip().lower()
+    # Drop the trailing .local that some systems include
+    if raw.endswith(".local"):
+        raw = raw[:-6]
+    # Strip to label-only (gethostname can return FQDN on some hosts)
+    raw = raw.split(".")[0]
+    # Sanitize: keep only [a-z0-9-]
+    sanitized = re.sub(r"[^a-z0-9-]", "-", raw).strip("-")
+    if not sanitized or sanitized in ("localhost", "openocto"):
+        return "openocto"
+    return f"openocto-{sanitized}"
+
+
 class LoggingConfig(BaseModel):
     level: str = "INFO"
     file: str | None = None
@@ -194,6 +233,7 @@ class AppConfig(BaseModel):
     skills: SkillsConfig = Field(default_factory=SkillsConfig)
     web: WebConfig = Field(default_factory=WebConfig)
     mcp: MCPConfig = Field(default_factory=MCPConfig)
+    mdns: MDNSConfig = Field(default_factory=MDNSConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
 
 

@@ -37,6 +37,7 @@ web = [
     "aiohttp>=3.9",
     "aiohttp-jinja2>=1.6",
     "jinja2>=3.1",
+    "zeroconf>=0.130",
 ]
 dev = [
     "pytest>=7.0",

@@ -171,6 +171,18 @@ mcp:
   port: 8765
   require_auth: true           # token in ~/.openocto/mcp-token (chmod 600)
 
+# mDNS / Bonjour — publish OpenOcto as `<hostname>.local` on the LAN so
+# mobile apps and other clients can find it without typing an IP address.
+# Service type: _openocto._tcp.local
+mdns:
+  enabled: true
+  # hostname: derived from the system hostname by default to avoid collisions
+  # when running >1 OpenOcto instance on the same LAN. e.g. "raspberrypi" →
+  # "openocto-raspberrypi.local". Override here to pick a custom name like
+  # "kitchen-octo" → "kitchen-octo.local".
+  # hostname: "openocto"
+  service_name: "OpenOcto Voice Assistant"
+
 # Logging
 logging:
   level: "INFO"

@@ -642,6 +642,10 @@ class OpenOctoApp:
         mcp_server = getattr(self, "_mcp_server", None)
         if mcp_server is not None and self._loop:
             asyncio.run_coroutine_threadsafe(mcp_server.stop(), self._loop)
+        # Unregister mDNS service
+        mdns = getattr(self, "_mdns", None)
+        if mdns is not None and self._loop:
+            asyncio.run_coroutine_threadsafe(mdns.stop(), self._loop)
         # Stop any running media players spawned by skills
         if self._skills is not None:
             media = self._skills.get("media_player")
@@ -694,6 +698,20 @@ class OpenOctoApp:
                 )
             except Exception:
                 logger.exception("Failed to start MCP server")
+
+        # Publish on mDNS so mobile/LAN clients can find us as <hostname>.local
+        self._mdns = None
+        if self._config.mdns.enabled:
+            try:
+                from openocto.web.mdns import MDNSPublisher
+                self._mdns = MDNSPublisher(
+                    self._config.mdns,
+                    web_port=self._config.web.port,
+                    mcp_config=self._config.mcp,
+                )
+                await self._mdns.start()
+            except Exception:
+                logger.exception("Failed to start mDNS publisher")
 
         # Health check: verify AI backend responds before starting
         print(f"{WRENCH} Checking AI backend ({self._ai_router.active_backend_name})...")

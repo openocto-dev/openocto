@@ -164,6 +164,17 @@ def web(host: str, port: int) -> None:
             except Exception as e:
                 logger.warning("MCP server not available: %s", e)
 
+        # Publish on mDNS
+        mdns = None
+        if config.mdns.enabled:
+            try:
+                from openocto.web.mdns import MDNSPublisher
+                mdns = MDNSPublisher(config.mdns, web_port=port, mcp_config=config.mcp)
+                await mdns.start()
+                click.echo(f"  mDNS: http://{config.mdns.hostname}.local:{port}")
+            except Exception as e:
+                logger.warning("mDNS not available: %s", e)
+
         click.echo(f"\n  \U0001f310 Web admin: http://localhost:{port}\n")
         try:
             while True:
@@ -171,6 +182,8 @@ def web(host: str, port: int) -> None:
         except (KeyboardInterrupt, asyncio.CancelledError):
             pass
         finally:
+            if mdns:
+                await mdns.stop()
             if mcp_server:
                 await mcp_server.stop()
             await runner.cleanup()
@@ -346,14 +359,10 @@ def mcp_url(config_path: str | None) -> None:
     port = config.mcp.port
     enabled = config.mcp.enabled
 
-    # Determine LAN IP for remote clients
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))
-        lan_ip = s.getsockname()[0]
-        s.close()
-    except Exception:
-        lan_ip = "127.0.0.1"
+    # Determine LAN IP for remote clients (skip docker/tun/veth interfaces)
+    from openocto.web.mdns import _get_lan_ips
+    ips = [ip for ip in _get_lan_ips() if not ip.startswith("127.")]
+    lan_ip = ips[0] if ips else "127.0.0.1"
 
     click.echo(f"\nMCP server port: {port}")
     click.echo(f"Status: {'enabled' if enabled else 'disabled (set mcp.enabled: true in config)'}\n")
@@ -398,20 +407,23 @@ def api_token(reset: bool) -> None:
 @click.option("--config", "config_path", default=None, help="Path to config file")
 def api_url(config_path: str | None) -> None:
     """Show JSON API base URLs and a sample curl command."""
-    import socket
     config = load_config(config_path)
     port = config.web.port
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))
-        lan_ip = s.getsockname()[0]
-        s.close()
-    except Exception:
-        lan_ip = "127.0.0.1"
+
+    # Skip docker/tun/veth interfaces — those are unreachable from peers
+    from openocto.web.mdns import _get_lan_ips
+    ips = [ip for ip in _get_lan_ips() if not ip.startswith("127.")]
+    lan_ip = ips[0] if ips else "127.0.0.1"
+    mdns_host = f"{config.mdns.hostname}.local" if config.mdns.enabled else lan_ip
 
     click.echo(f"\nJSON API base URLs:")
     click.echo(f"  Local: http://localhost:{port}/api/v1")
-    click.echo(f"  LAN:   http://{lan_ip}:{port}/api/v1\n")
+    if config.mdns.enabled:
+        click.echo(f"  mDNS:  http://{mdns_host}:{port}/api/v1")
+    click.echo(f"  LAN:   http://{lan_ip}:{port}/api/v1")
+    if len(ips) > 1:
+        click.echo(f"  (also: {', '.join(f'http://{ip}:{port}' for ip in ips[1:])})")
+    click.echo()
     click.echo("Sample request:")
     click.echo(f"  curl -H 'Authorization: Bearer <token>' http://{lan_ip}:{port}/api/v1/status")
     click.echo(f"\nGet your token:")
