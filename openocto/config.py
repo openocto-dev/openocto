@@ -50,7 +50,7 @@ class AudioConfig(BaseModel):
 class VADConfig(BaseModel):
     engine: str = "silero"
     threshold: float = 0.5
-    silence_duration: float = 3.5
+    silence_duration: float = 1.5
     max_recording_duration: float = 60.0
     pre_speech_buffer: float = 0.3
     mic_gain: float | None = None  # null = auto-gain, number = fixed multiplier
@@ -149,16 +149,22 @@ class MediaPlayerSkillConfig(BaseModel):
     fullscreen_default: bool = True
 
 
+class PlaneStatusSkillConfig(BaseModel):
+    """Plane status digest reads its credentials from mcp-secrets.yaml — there
+    is no per-skill config beyond the on/off switch in ``skills.enabled``."""
+
+
 class SkillsConfig(BaseModel):
     enabled: list[str] = Field(default_factory=lambda: [
         "time", "weather", "unit_converter", "notes", "timer",
-        "file_ops", "launcher", "media_player",
+        "file_ops", "launcher", "media_player", "plane_status",
     ])
     time: TimeSkillConfig = Field(default_factory=TimeSkillConfig)
     weather: WeatherSkillConfig = Field(default_factory=WeatherSkillConfig)
     file_ops: FileOpsSkillConfig = Field(default_factory=FileOpsSkillConfig)
     launcher: LauncherSkillConfig = Field(default_factory=LauncherSkillConfig)
     media_player: MediaPlayerSkillConfig = Field(default_factory=MediaPlayerSkillConfig)
+    plane_status: PlaneStatusSkillConfig = Field(default_factory=PlaneStatusSkillConfig)
 
 
 class MCPConfig(BaseModel):
@@ -207,6 +213,12 @@ def _default_mdns_hostname() -> str:
     return f"openocto-{sanitized}"
 
 
+class MCPClientConfig(BaseModel):
+    """Configuration for the MCP client (consuming external MCP servers)."""
+    enabled: bool = True
+    connect_timeout: float = 10.0
+
+
 class LoggingConfig(BaseModel):
     level: str = "INFO"
     file: str | None = None
@@ -233,6 +245,7 @@ class AppConfig(BaseModel):
     skills: SkillsConfig = Field(default_factory=SkillsConfig)
     web: WebConfig = Field(default_factory=WebConfig)
     mcp: MCPConfig = Field(default_factory=MCPConfig)
+    mcp_client: MCPClientConfig = Field(default_factory=MCPClientConfig)
     mdns: MDNSConfig = Field(default_factory=MDNSConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
 

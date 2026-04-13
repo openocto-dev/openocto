@@ -48,9 +48,24 @@ def setup_logging(config: LoggingConfig) -> None:
         except OSError as e:
             root.warning("Could not open log file %s: %s", log_path, e)
 
-    # Silence noisy third-party loggers — aiohttp.access logs every HTTP
-    # request at INFO, which spams the console once chat polling kicks in.
-    logging.getLogger("aiohttp.access").setLevel(logging.WARNING)
+    # Silence noisy third-party loggers that spam the console during
+    # normal voice/chat operation:
+    # - aiohttp.access logs every HTTP request at INFO (chat polling etc.)
+    # - httpx logs each outbound HTTP call at INFO (every AI backend call)
+    # - httpcore/openai logs connection internals at DEBUG
+    # - pywhispercpp prints "Transcribing..." / inference time at INFO
+    for noisy in (
+        "aiohttp.access",
+        "httpx",
+        "httpcore",
+        "httpcore.connection",
+        "httpcore.http11",
+        "openai._base_client",
+        "pywhispercpp.model",
+        "urllib3.connectionpool",
+        "piper.voice",
+    ):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
 def _parse_level(level: str) -> int:

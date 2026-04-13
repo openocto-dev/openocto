@@ -18,6 +18,48 @@ logger = logging.getLogger(__name__)
 _MAX_TOOL_ITERATIONS = 6  # safety bound on the tool-use loop
 
 
+def _system_blocks(system_prompt: str) -> list[dict[str, Any]]:
+    """Wrap the system prompt in a content-block list with ephemeral cache.
+
+    The persona system prompt is static per session, so marking it cacheable
+    lets Anthropic reuse it for ~5 min at 10% of input cost.
+    """
+    return [{
+        "type": "text",
+        "text": system_prompt,
+        "cache_control": {"type": "ephemeral"},
+    }]
+
+
+def _tools_with_cache(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return tools with cache_control on the final entry.
+
+    Anthropic caches the entire request prefix up to and including the
+    last block that carries cache_control. Marking only the last tool is
+    enough to cache the whole tools array.
+    """
+    if not tools:
+        return tools
+    last = {**tools[-1], "cache_control": {"type": "ephemeral"}}
+    return tools[:-1] + [last]
+
+
+def _log_cache_usage(response: Any, label: str) -> None:
+    """Log prompt-cache token accounting from the Anthropic response."""
+    usage = getattr(response, "usage", None)
+    if usage is None:
+        return
+    created = getattr(usage, "cache_creation_input_tokens", 0) or 0
+    read = getattr(usage, "cache_read_input_tokens", 0) or 0
+    if created or read:
+        logger.info(
+            "Claude %s cache: write=%d read=%d in=%d out=%d",
+            label, created, read,
+            getattr(usage, "input_tokens", 0) or 0,
+            getattr(usage, "output_tokens", 0) or 0,
+        )
+
+
 class ClaudeBackend(AIBackend):
     """AI backend using Anthropic's Claude API."""
 
@@ -45,9 +87,10 @@ class ClaudeBackend(AIBackend):
         response = await self._client.messages.create(
             model=self._model,
             max_tokens=1024,
-            system=system_prompt,
+            system=_system_blocks(system_prompt),
             messages=messages,
         )
+        _log_cache_usage(response, "send")
         text = _extract_text(response.content)
         logger.debug("Claude response (%d chars)", len(text))
         return text
@@ -70,12 +113,14 @@ class ClaudeBackend(AIBackend):
         async with self._client.messages.stream(
             model=self._model,
             max_tokens=1024,
-            system=system_prompt,
+            system=_system_blocks(system_prompt),
             messages=messages,
         ) as stream:
             async for chunk in stream.text_stream:
                 full_text.append(chunk)
                 await on_chunk(chunk)
+            final = await stream.get_final_message()
+            _log_cache_usage(final, "stream")
 
         return "".join(full_text)
 
@@ -93,19 +138,26 @@ class ClaudeBackend(AIBackend):
         Each iteration we send the running conversation; if the model
         returns ``stop_reason=tool_use``, we execute the requested tool
         via the registry, append the tool result, and loop again.
+
+        The system prompt and the tools block are both marked with
+        ``cache_control: ephemeral`` — Anthropic keeps that prefix hot
+        for ~5 min and bills re-reads at 10% of input cost, which is
+        the main lever for making multi-turn sessions cheap.
         """
         # Local copy — we mutate it across iterations.
         convo: list[dict[str, Any]] = list(messages)
-        tools = skills.anthropic_tools()
+        tools = _tools_with_cache(skills.anthropic_tools())
+        system = _system_blocks(system_prompt)
 
         for _ in range(_MAX_TOOL_ITERATIONS):
             response = await self._client.messages.create(
                 model=self._model,
                 max_tokens=1024,
-                system=system_prompt,
+                system=system,
                 tools=tools,
                 messages=convo,
             )
+            _log_cache_usage(response, "tool_loop")
 
             if response.stop_reason != "tool_use":
                 # Final answer — replay text via on_chunk if streaming.

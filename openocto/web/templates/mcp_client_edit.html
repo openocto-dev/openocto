@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit' if server else 'Add' }} MCP Server — OpenOcto{% endblock %}
+
+{% block content %}
+<h2>{{ 'Edit' if server else 'Add' }} MCP Server</h2>
+
+{% if flash %}
+<div class="flash flash-{{ flash_type or 'info' }}">{{ flash }}</div>
+{% endif %}
+
+<article>
+    <header>Security notice</header>
+    <p><small>Headers (bearer tokens) and stdio environment variables are stored in <code>~/.openocto/mcp-secrets.yaml</code> (chmod 600). Anyone with file access can read them. <strong>Never commit this file to git.</strong></small></p>
+</article>
+
+<article>
+    <header>{{ 'Edit server' if server else 'New server' }}</header>
+    <form method="post" action="{{ '/api/mcp/servers/' + server.id|string + '/edit' if server else '/api/mcp/servers' }}">
+
+        <label for="name">
+            Server name
+            <input type="text" id="name" name="name"
+                   value="{{ server.name if server else '' }}"
+                   placeholder="notion"
+                   {% if server %}readonly{% endif %}
+                   required>
+            <small>Unique identifier, used as tool prefix: <code>notion__create_page</code>. Letters, digits, hyphens, underscores.{% if server %} Cannot be changed.{% endif %}</small>
+        </label>
+
+        <label for="transport">
+            Transport
+            <select id="transport" name="transport">
+                <option value="http" {% if not server or server.transport == 'http' %}selected{% endif %}>HTTP (Streamable, MCP 2024-11-05)</option>
+                <option value="stdio" {% if server and server.transport == 'stdio' %}selected{% endif %}>stdio (local command via stdin/stdout)</option>
+                <option value="sse" disabled>SSE — not yet supported</option>
+            </select>
+        </label>
+
+        <!-- HTTP fields ────────────────────────────────────────────── -->
+        <div id="http-fields">
+            <label for="url">
+                MCP server URL
+                <input type="url" id="url" name="url"
+                       value="{{ server.url if server and server.transport != 'stdio' else '' }}"
+                       placeholder="https://mcp.notion.com/mcp">
+                <small>Must start with <code>http://</code> or <code>https://</code></small>
+            </label>
+
+            {% if server and headers_raw %}
+            <article style="margin: 0.5rem 0; padding: 0.5rem 1rem; background: var(--pico-card-background-color);">
+                <small><strong>Current headers</strong> (read-only, masked):</small>
+                <pre style="margin: 0.25rem 0 0; font-size: 0.8rem; opacity: 0.7;">{{ headers_raw }}</pre>
+            </article>
+            {% endif %}
+            <label for="headers_raw">
+                Headers <small>(optional — stored in mcp-secrets.yaml)</small>
+                <textarea id="headers_raw" name="headers_raw" rows="4"
+                          placeholder="Authorization: Bearer your-token-here&#10;X-Custom-Header: value"></textarea>
+                <small>One per line: <code>Header-Name: value</code>. <strong>Leave blank to keep existing headers.</strong> Anything you type here REPLACES all existing headers.</small>
+            </label>
+        </div>
+
+        <!-- stdio fields ───────────────────────────────────────────── -->
+        <div id="stdio-fields" style="display:none">
+            <label for="command">
+                Command
+                <input type="text" id="command" name="command"
+                       value="{{ server.command if server else '' }}"
+                       placeholder="uvx">
+                <small>Executable to run (must be on PATH, e.g. <code>uvx</code>, <code>npx</code>, <code>python</code>).</small>
+            </label>
+
+            <label for="args_raw">
+                Arguments <small>(one per line)</small>
+                <textarea id="args_raw" name="args_raw" rows="4"
+                          placeholder="plane-mcp-server&#10;stdio">{{ args_raw or '' }}</textarea>
+                <small>Each line is one argument. Example for Plane: <code>plane-mcp-server</code> on one line, <code>stdio</code> on the next.</small>
+            </label>
+
+            {% if server and env_raw %}
+            <article style="margin: 0.5rem 0; padding: 0.5rem 1rem; background: var(--pico-card-background-color);">
+                <small><strong>Current environment</strong> (read-only, masked):</small>
+                <pre style="margin: 0.25rem 0 0; font-size: 0.8rem; opacity: 0.7;">{{ env_raw }}</pre>
+            </article>
+            {% endif %}
+            <label for="env_raw">
+                Environment variables <small>(optional — stored in mcp-secrets.yaml)</small>
+                <textarea id="env_raw" name="env_raw" rows="5"
+                          placeholder="PLANE_API_KEY=plane_api_xxx&#10;PLANE_WORKSPACE_SLUG=my-workspace&#10;PLANE_BASE_URL=https://example.com"></textarea>
+                <small>One per line: <code>KEY=value</code>. <strong>Leave blank to keep existing values.</strong> Anything you type here REPLACES all existing variables.</small>
+            </label>
+        </div>
+
+        <label for="allowlist_raw">
+            Tool allow-list <small>(optional)</small>
+            <textarea id="allowlist_raw" name="allowlist_raw" rows="3"
+                      placeholder="# Empty = allow all tools&#10;create_page&#10;search_database">{{ allowlist_raw or '' }}</textarea>
+            <small>One tool name per line. Empty = expose all tools from this server.</small>
+        </label>
+
+        <label>
+            <input type="checkbox" name="enabled" value="1"
+                   {% if not server or server.enabled %}checked{% endif %}>
+            Enabled (connect on startup)
+        </label>
+
+        <div class="btn-row">
+            <button type="submit" class="btn-inline">{{ 'Save changes' if server else 'Add server' }}</button>
+            <a href="/mcp" role="button" class="outline secondary btn-inline">Cancel</a>
+        </div>
+
+    </form>
+</article>
+
+<script>
+(function() {
+    var transport = document.getElementById('transport');
+    var httpFields = document.getElementById('http-fields');
+    var stdioFields = document.getElementById('stdio-fields');
+    var urlInput = document.getElementById('url');
+    var commandInput = document.getElementById('command');
+
+    function applyTransport() {
+        var isStdio = transport.value === 'stdio';
+        httpFields.style.display = isStdio ? 'none' : '';
+        stdioFields.style.display = isStdio ? '' : 'none';
+        // Swap "required" attribute so HTML5 validation matches visible fields
+        if (isStdio) {
+            urlInput.removeAttribute('required');
+            commandInput.setAttribute('required', '');
+        } else {
+            urlInput.setAttribute('required', '');
+            commandInput.removeAttribute('required');
+        }
+    }
+    transport.addEventListener('change', applyTransport);
+    applyTransport();
+})();
+</script>
+{% endblock %}

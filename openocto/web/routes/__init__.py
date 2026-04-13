@@ -35,6 +35,7 @@ def register_routes(app: web.Application) -> None:
     from openocto.web.routes.settings import routes as settings_routes
     from openocto.web.routes.calibration import routes as calibration_routes
     from openocto.web.routes.api_v1 import routes as api_v1_routes
+    from openocto.web.routes.mcp_clients import routes as mcp_clients_routes
 
     app.router.add_routes(dashboard_routes)
     app.router.add_routes(wizard_routes)
@@ -48,3 +49,4 @@ def register_routes(app: web.Application) -> None:
     app.router.add_routes(settings_routes)
     app.router.add_routes(calibration_routes)
     app.router.add_routes(api_v1_routes)
+    app.router.add_routes(mcp_clients_routes)

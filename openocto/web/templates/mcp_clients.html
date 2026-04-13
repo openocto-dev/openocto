@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}MCP Servers — OpenOcto{% endblock %}
+
+{% block content %}
+<h2>MCP Servers</h2>
+
+{% if flash %}
+<div class="flash flash-{{ flash_type or 'info' }}">{{ flash }}</div>
+{% endif %}
+
+<article>
+    <header>
+        <span>OpenOcto Skills (built-in)</span>
+        <span class="state-badge state-recording">connected</span>
+    </header>
+    <p>
+        <strong>{{ builtin.tool_count }}</strong> built-in skill{{ 's' if builtin.tool_count != 1 else '' }} available to the AI.
+        <a href="/api/v1/status" target="_blank">View API status</a>
+    </p>
+    {% if builtin.tools %}
+    <details>
+        <summary>Show tools ({{ builtin.tool_count }})</summary>
+        <ul>
+        {% for t in builtin.tools %}
+            <li><code>{{ t }}</code></li>
+        {% endfor %}
+        </ul>
+    </details>
+    {% endif %}
+</article>
+
+<div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:1rem">
+    <h3 style="margin:0">External servers</h3>
+    <a href="/mcp/new" role="button" class="btn-sm">+ Add Server</a>
+</div>
+
+{% if not servers %}
+<p><small>No external MCP servers connected yet. Add a server to give the AI access to Notion, GitHub, Home Assistant, and more — without writing any skill code.</small></p>
+{% else %}
+<table>
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>URL</th>
+            <th>Status</th>
+            <th>Tools</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for s in servers %}
+        <tr>
+            <td><strong>{{ s.name }}</strong></td>
+            <td><small>{{ s.url }}</small></td>
+            <td>
+                {% if not s.enabled %}
+                <span class="state-badge state-idle">disabled</span>
+                {% elif s.last_status == 'connected' and not s.unhealthy %}
+                <span class="state-badge state-recording">connected</span>
+                {% elif s.last_status == 'error' or s.unhealthy %}
+                <span class="state-badge state-error">error</span>
+                {% else %}
+                <span class="state-badge state-idle">—</span>
+                {% endif %}
+                {% if s.last_error %}
+                <small title="{{ s.last_error }}" style="cursor:help;color:var(--del-color)">⚠</small>
+                {% endif %}
+            </td>
+            <td>
+                {% if s.tools %}
+                <details>
+                    <summary>{{ s.tool_count }}</summary>
+                    <ul>
+                    {% for t in s.tools %}
+                        <li><code>{{ t }}</code></li>
+                    {% endfor %}
+                    </ul>
+                </details>
+                {% else %}
+                {{ s.tool_count }}
+                {% endif %}
+            </td>
+            <td style="white-space:nowrap">
+                <a href="/mcp/{{ s.id }}/edit" role="button" class="outline btn-sm">Edit</a>
+                <form method="post" action="/api/mcp/servers/{{ s.id }}/test" style="display:inline">
+                    <button type="submit" class="outline secondary btn-sm">Test</button>
+                </form>
+                <form method="post" action="/api/mcp/servers/{{ s.id }}/refresh" style="display:inline">
+                    <button type="submit" class="outline secondary btn-sm">Refresh</button>
+                </form>
+                <form method="post" action="/api/mcp/servers/{{ s.id }}/toggle" style="display:inline">
+                    <button type="submit" class="outline btn-sm">{{ 'Disable' if s.enabled else 'Enable' }}</button>
+                </form>
+                <form method="post" action="/api/mcp/servers/{{ s.id }}/delete" style="display:inline"
+                      onsubmit="return confirm('Delete {{ s.name }}?')">
+                    <button type="submit" class="outline contrast btn-sm">Delete</button>
+                </form>
+            </td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+{% endblock %}

@@ -58,6 +58,9 @@ class OpenOctoApp:
         # Skills (LLM-callable tools)
         self._skills: SkillRegistry | None = None
 
+        # External MCP client registry
+        self._mcp_client_registry = None
+
         # Processing lock (shared by PTT and wake word modes)
         self._processing = False
         self._last_error = False
@@ -379,6 +382,7 @@ class OpenOctoApp:
             await self._state_machine.transition("cancel")
             return None
 
+        self._player.chime(ascending=False)  # mic closed
         return audio
 
     def _clear_last_error(self) -> None:
@@ -397,8 +401,8 @@ class OpenOctoApp:
         if self._player.is_playing:
             self._player.stop()
 
-        self._player.beep(freq=880.0, duration=0.12)
-        await asyncio.sleep(0.15)  # let beep finish before VAD starts
+        self._player.chime(ascending=True)  # mic open
+        await asyncio.sleep(0.15)  # let chime finish before VAD starts
 
         try:
             audio = await self._await_and_record()
@@ -426,10 +430,9 @@ class OpenOctoApp:
 
         self._processing = True
         try:
-            await asyncio.sleep(0.15)  # brief pause after TTS ends
-            self._player.beep(freq=660.0, duration=0.10)  # lower pitch = "ready"
-            await asyncio.sleep(0.15)
-
+            # Fire the "mic open" chime and begin listening immediately — no
+            # padding sleeps here. The audio stack already drained TTS first.
+            self._player.chime(ascending=True)  # mic open
             audio = await self._await_and_record(no_speech_timeout=5.0)
             if audio is None:
                 return  # no speech detected — wake word mode resumes
@@ -488,7 +491,9 @@ class OpenOctoApp:
                 print(f"{WARN}  STT not available. Install pywhispercpp: pip install -e .[audio]")
                 await self._state_machine.transition("cancel")
                 return
+            print(f"{WRENCH} Transcribing...", end="\r", flush=True)
             result = await asyncio.to_thread(self._stt.transcribe, audio)
+            print(" " * 60, end="\r")  # clear the transcribing line
             await self._event_bus.publish(EventType.STT_RESULT, {"text": result.text, "language": result.language})
 
             if not result.text.strip():
@@ -642,6 +647,10 @@ class OpenOctoApp:
         mcp_server = getattr(self, "_mcp_server", None)
         if mcp_server is not None and self._loop:
             asyncio.run_coroutine_threadsafe(mcp_server.stop(), self._loop)
+        # Stop MCP client registry
+        mcp_client_registry = getattr(self, "_mcp_client_registry", None)
+        if mcp_client_registry is not None and self._loop and self._loop.is_running():
+            asyncio.run_coroutine_threadsafe(mcp_client_registry.stop(), self._loop)
         # Unregister mDNS service
         mdns = getattr(self, "_mdns", None)
         if mdns is not None and self._loop:
@@ -698,6 +707,23 @@ class OpenOctoApp:
                 )
             except Exception:
                 logger.exception("Failed to start MCP server")
+
+        # Start MCP client registry (connect to external MCP servers)
+        self._mcp_client_registry = None
+        self._mcp_store = None
+        self._mcp_secrets = None
+        if self._config.mcp_client.enabled and self._skills is not None:
+            try:
+                from openocto.mcp_client import MCPClientRegistry, MCPServerStore, MCPSecretsStore
+                self._mcp_store = MCPServerStore(self._history_store._conn)
+                self._mcp_secrets = MCPSecretsStore()
+                self._mcp_client_registry = MCPClientRegistry(
+                    self._mcp_store, self._mcp_secrets, self._skills,
+                    connect_timeout=self._config.mcp_client.connect_timeout,
+                )
+                await self._mcp_client_registry.start()
+            except Exception:
+                logger.exception("Failed to start MCP client registry")
 
         # Publish on mDNS so mobile/LAN clients can find us as <hostname>.local
         self._mdns = None

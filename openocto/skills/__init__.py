@@ -30,6 +30,7 @@ _SKILL_TABLE: dict[str, tuple[str, str]] = {
     "file_ops": ("openocto.skills.file_ops", "FileOpsSkill"),
     "launcher": ("openocto.skills.launcher", "LauncherSkill"),
     "media_player": ("openocto.skills.media_player", "MediaPlayerSkill"),
+    "plane_status": ("openocto.skills.plane_status", "PlaneStatusSkill"),
 }
 
 
@@ -48,6 +49,7 @@ def build_default_registry(config: "SkillsConfig") -> SkillRegistry:
     priority = {
         "time": 0, "unit_converter": 1, "weather": 2, "notes": 3,
         "timer": 4, "file_ops": 5, "launcher": 6, "media_player": 7,
+        "plane_status": 8,
     }
     enabled.sort(key=lambda n: priority.get(n, 99))
 
@@ -60,6 +62,7 @@ def build_default_registry(config: "SkillsConfig") -> SkillRegistry:
         "launcher": config.launcher.model_dump() if config.launcher else {},
         "media_player": config.media_player.model_dump() if config.media_player else {},
         "unit_converter": {},
+        "plane_status": {},
     }
 
     for name in enabled:

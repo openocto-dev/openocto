@@ -141,6 +141,12 @@ class SkillRegistry:
         self.register(skill)
         return skill
 
+    def unregister(self, name: str) -> None:
+        """Remove a skill by name (no-op if not registered)."""
+        if name in self._skills:
+            del self._skills[name]
+            logger.info("Unregistered skill: %s", name)
+
     def get(self, name: str) -> Skill | None:
         return self._skills.get(name)
 
@@ -179,6 +185,17 @@ class SkillRegistry:
         skill = self._skills.get(name)
         if skill is None:
             return f"Error: unknown skill {name!r}"
+        # External MCP tool skills set _skip_validation = True because their
+        # inputSchema is passed through verbatim and has no pydantic Parameters.
+        if getattr(skill, "_skip_validation", False):
+            try:
+                result = await skill.execute(**(arguments or {}))
+            except SkillError as e:
+                return f"Error: {e}"
+            except Exception as e:
+                logger.exception("Skill %s crashed", name)
+                return f"Error: {name} failed: {e}"
+            return result if isinstance(result, str) else str(result)
         try:
             validated = skill.Parameters(**(arguments or {}))
         except Exception as e:

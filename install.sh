@@ -182,6 +182,14 @@ if [ "$(uname)" != "Darwin" ]; then
             sudo apt-get update -qq && sudo apt-get install -y -qq libportaudio2 portaudio19-dev
             ok "PortAudio installed"
         fi
+        # If PipeWire is running, install pipewire-alsa so PortAudio/sounddevice
+        # can see USB microphones routed through PipeWire (otherwise hw:X,Y devices
+        # appear in arecord but not in sounddevice, causing "Device unavailable" errors).
+        if command -v pipewire &>/dev/null && ! dpkg -s pipewire-alsa &>/dev/null 2>&1; then
+            info "PipeWire detected — installing pipewire-alsa for microphone support..."
+            sudo apt-get install -y -qq pipewire-alsa
+            ok "pipewire-alsa installed"
+        fi
     elif command -v dnf &>/dev/null; then
         if ! rpm -q portaudio &>/dev/null 2>&1; then
             info "Installing system audio libraries (PortAudio)..."

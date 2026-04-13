@@ -287,12 +287,30 @@ def get_wake_word_model(model_name: str) -> Path | None:
 
 
 def get_silero_vad_model() -> Path:
-    """Get path to the Silero VAD model, downloading if needed."""
+    """Get path to the Silero VAD model, copying from openwakeword or downloading.
+
+    Prefers the v4 model bundled with openwakeword (~1.8MB) because Silero v5
+    (~2.3MB) is broken on ARM64 + onnxruntime 1.24+: it returns prob=0.0 on
+    all audio including clear speech. v4 works correctly on all platforms.
+    """
     dest = MODELS_DIR / "vad" / SILERO_VAD["filename"]
+    if dest.exists():
+        return dest
 
-    if not dest.exists():
-        _download_file(SILERO_VAD["url"], dest, desc="silero_vad.onnx")
+    # Try openwakeword's bundled v4 first — it's a known-good model we already ship
+    try:
+        import openwakeword
+        bundled = Path(openwakeword.__file__).parent / "resources" / "models" / "silero_vad.onnx"
+        if bundled.exists():
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            import shutil
+            shutil.copy(bundled, dest)
+            return dest
+    except ImportError:
+        pass
 
+    # Fallback: download from github (v5 — may be broken on ARM64)
+    _download_file(SILERO_VAD["url"], dest, desc="silero_vad.onnx")
     return dest
 
 

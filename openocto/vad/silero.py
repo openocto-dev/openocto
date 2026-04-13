@@ -27,16 +27,22 @@ class SileroVAD(VADEngine):
 
     _V5_WINDOW = 512  # v5 model requires exactly 512 samples per call
 
-    _AUTO_GAIN_NOISE_FLOOR = 0.005  # ~164 in int16 — below this, don't boost
+    _AUTO_GAIN_NOISE_FLOOR = 0.02   # ~655 in int16 — below this, don't boost (avoids amplifying mic noise)
     _AUTO_GAIN_TARGET = 0.5         # target peak for auto-gain normalization
+
+    # Require this many consecutive "speech" chunks to reset the silence timer.
+    # Single-chunk spikes (USB mic noise, electronics, breath pops) don't count
+    # as real speech and shouldn't keep the recording alive forever.
+    _SPEECH_STREAK_RESET = 2
 
     def __init__(self, config: VADConfig | None = None) -> None:
         self._threshold = config.threshold if config else 0.5
-        self._silence_duration = config.silence_duration if config else 3.5
+        self._silence_duration = config.silence_duration if config else 1.5
         self._mic_gain: float | None = config.mic_gain if config else None
         self._rms_threshold: int = config.rms_speech_threshold if config else 300
         self._sample_rate = np.array(16000, dtype=np.int64)
         self._silence_start: float | None = None
+        self._speech_streak: int = 0
         self.last_prob: float = 0.0
 
         model_path = get_silero_vad_model()
@@ -93,31 +99,49 @@ class SileroVAD(VADEngine):
         return audio_f32
 
     def is_speech(self, audio_chunk: np.ndarray) -> bool:
-        """Return True if speech detected by Silero VAD or raw RMS exceeds threshold.
+        """Return True if speech is detected in this chunk.
 
-        On some platforms (e.g. ARM64 onnxruntime) Silero VAD probabilities
-        can be unreliable, so RMS on the RAW signal (before gain) acts as fallback.
-        Gain is only applied to audio fed to the Silero model.
+        Trusts Silero as the primary speech/noise discriminator. Raw RMS is
+        only used as a fast early-exit gate for pure silence — it does NOT
+        flag speech on its own, because sensitive USB mics (PS3 Eye, webcams)
+        often produce sustained electrical noise well above any sensible RMS
+        threshold that Silero correctly identifies as "not speech".
+
+        Logic:
+        1. If RMS < rms_threshold — definitely silence, skip Silero entirely.
+        2. Otherwise run Silero on the gained signal and trust its verdict.
         """
         chunk_i16 = audio_chunk.flatten()
 
-        # RMS on raw signal (before gain) — reliable speech/silence discriminator
+        # RMS on raw signal (before gain) — fast silence gate only
         rms_raw = float(np.sqrt(np.mean(chunk_i16.astype(np.float32) ** 2)))
+        self.last_rms = rms_raw
 
-        # Silero inference on gained signal
+        # Early exit: low RMS means silence — don't run Silero
+        if rms_raw < self._rms_threshold:
+            self.last_prob = 0.0
+            logger.debug("VAD rms_raw=%.0f < thr=%d → silence (skipped Silero)",
+                          rms_raw, self._rms_threshold)
+            return False
+
+        # Significant audio — let Silero decide whether it's speech or noise
         audio_f32 = chunk_i16.astype(np.float32) / 32768.0
         audio_f32 = self._apply_gain(audio_f32)
         prob = self._infer_v5(audio_f32) if self._version == "v5" else self._infer_v4(audio_f32)
         self.last_prob = prob
-        self.last_rms = rms_raw
 
-        result = prob > self._threshold or rms_raw > self._rms_threshold
-        logger.debug("VAD prob=%.3f rms_raw=%.0f (thr=%d) → %s",
-                      prob, rms_raw, self._rms_threshold, result)
+        result = prob > self._threshold
+        logger.debug("VAD prob=%.3f rms_raw=%.0f (thr=%d/%.2f) → %s",
+                      prob, rms_raw, self._rms_threshold, self._threshold, result)
         return result
 
     def should_stop_recording(self, audio_chunk: np.ndarray, speech: bool | None = None) -> bool:
         """Return True when silence has lasted >= silence_duration seconds.
+
+        Uses hysteresis: single-chunk "speech" spikes don't reset the silence
+        timer — only sustained speech (2+ consecutive chunks) does. This is
+        critical for sensitive USB mics (PS3 Eye, webcams) where intermittent
+        electrical noise or breath pops can flag single chunks as speech.
 
         Pass ``speech`` to avoid re-running inference on the same chunk.
         """
@@ -125,9 +149,14 @@ class SileroVAD(VADEngine):
             speech = self.is_speech(audio_chunk)
 
         if speech:
-            self._silence_start = None
+            self._speech_streak += 1
+            # Only sustained speech resets the silence timer
+            if self._speech_streak >= self._SPEECH_STREAK_RESET:
+                self._silence_start = None
             return False
 
+        # Non-speech chunk: break streak, start or continue silence timer
+        self._speech_streak = 0
         if self._silence_start is None:
             self._silence_start = time.monotonic()
 
@@ -135,4 +164,5 @@ class SileroVAD(VADEngine):
 
     def reset(self) -> None:
         self._silence_start = None
+        self._speech_streak = 0
         self._reset_state()

@@ -59,7 +59,20 @@ async def _i18n_context(request: web.Request) -> dict:
     return {
         "t": request.get("t", get_translator("en")),
         "lang": request.get("lang", "en"),
+        "static_v": _static_version(),
     }
+
+
+def _static_version() -> int:
+    """Return mtime of style.css for cache-busting query strings.
+
+    Recomputed on every request so any file change invalidates browser cache
+    immediately. stat() is cheap (microseconds).
+    """
+    try:
+        return int((_STATIC_DIR / "style.css").stat().st_mtime)
+    except OSError:
+        return 0
 
 
 def create_web_app(octo_app: OpenOctoApp) -> web.Application:

@@ -164,6 +164,27 @@ def web(host: str, port: int) -> None:
             except Exception as e:
                 logger.warning("MCP server not available: %s", e)
 
+        # Start MCP client registry (external MCP servers → local skills)
+        mcp_client_registry = None
+        octo._mcp_client_registry = None
+        if config.mcp_client.enabled and octo._skills is not None:
+            try:
+                from openocto.mcp_client import MCPClientRegistry, MCPServerStore, MCPSecretsStore
+                from openocto.history import HistoryStore
+                _hist = HistoryStore()
+                _mcp_store = MCPServerStore(_hist._conn)
+                _mcp_secrets = MCPSecretsStore()
+                mcp_client_registry = MCPClientRegistry(
+                    _mcp_store, _mcp_secrets, octo._skills,
+                    connect_timeout=config.mcp_client.connect_timeout,
+                )
+                await mcp_client_registry.start()
+                octo._mcp_client_registry = mcp_client_registry
+                octo._mcp_store = _mcp_store
+                octo._mcp_secrets = _mcp_secrets
+            except Exception as e:
+                logger.warning("MCP client registry not available: %s", e)
+
         # Publish on mDNS
         mdns = None
         if config.mdns.enabled:
@@ -184,6 +205,8 @@ def web(host: str, port: int) -> None:
         finally:
             if mdns:
                 await mdns.stop()
+            if mcp_client_registry:
+                await mcp_client_registry.stop()
             if mcp_server:
                 await mcp_server.stop()
             await runner.cleanup()
@@ -428,6 +451,149 @@ def api_url(config_path: str | None) -> None:
     click.echo(f"  curl -H 'Authorization: Bearer <token>' http://{lan_ip}:{port}/api/v1/status")
     click.echo(f"\nGet your token:")
     click.echo("  openocto api token\n")
+
+
+@main.group(name="mcp-client")
+def mcp_client_group() -> None:
+    """Manage external MCP servers (client connections)."""
+
+
+def _get_mcp_store_and_secrets():
+    """Open HistoryStore + MCPServerStore + MCPSecretsStore for CLI use."""
+    from openocto.history import HistoryStore
+    from openocto.mcp_client.store import MCPServerStore
+    from openocto.mcp_client.secrets import MCPSecretsStore
+    hist = HistoryStore()
+    store = MCPServerStore(hist._conn)
+    secrets = MCPSecretsStore()
+    return store, secrets
+
+
+@mcp_client_group.command(name="add")
+@click.argument("name")
+@click.argument("url")
+@click.option("--header", "-H", "headers", multiple=True,
+              metavar="KEY=VALUE", help="Custom header (repeatable). e.g. -H 'Authorization=Bearer tok'")
+@click.option("--allowlist", default="", help="Comma-separated tool names to allow (empty = all)")
+@click.option("--disabled", is_flag=True, default=False, help="Add server in disabled state")
+def mcp_client_add(name: str, url: str, headers: tuple, allowlist: str, disabled: bool) -> None:
+    """Add an external MCP server."""
+    store, secrets = _get_mcp_store_and_secrets()
+
+    parsed_headers: dict[str, str] = {}
+    for h in headers:
+        if "=" in h:
+            k, _, v = h.partition("=")
+            parsed_headers[k.strip()] = v.strip()
+        elif ":" in h:
+            k, _, v = h.partition(":")
+            parsed_headers[k.strip()] = v.strip()
+        else:
+            click.secho(f"Warning: could not parse header {h!r} (use KEY=VALUE or KEY: VALUE)", fg="yellow")
+
+    tool_allowlist = [t.strip() for t in allowlist.split(",") if t.strip()] if allowlist else []
+
+    try:
+        server_id = store.create(
+            name, url,
+            tool_allowlist=tool_allowlist,
+            enabled=not disabled,
+        )
+    except ValueError as exc:
+        click.secho(str(exc), fg="red")
+        raise SystemExit(1)
+
+    if parsed_headers:
+        secrets.set_headers(name, parsed_headers)
+
+    click.secho(f"Added MCP server '{name}' (id={server_id}).", fg="green")
+    click.echo(f"  URL: {url}")
+    if tool_allowlist:
+        click.echo(f"  Allow-list: {', '.join(tool_allowlist)}")
+    if not disabled:
+        click.echo("  Restart OpenOcto (or run 'openocto web') to connect.")
+
+
+@mcp_client_group.command(name="list")
+def mcp_client_list() -> None:
+    """List all configured external MCP servers."""
+    store, secrets = _get_mcp_store_and_secrets()
+    servers = store.list()
+    if not servers:
+        click.echo("No external MCP servers configured.")
+        click.echo("Add one with: openocto mcp-client add <name> <url>")
+        return
+    for s in servers:
+        enabled = "✓" if s["enabled"] else "✗"
+        status = s.get("last_status") or "—"
+        click.echo(f"  [{s['id']}] {enabled} {s['name']:<20} {s['url']} ({status})")
+
+
+@mcp_client_group.command(name="remove")
+@click.argument("name_or_id")
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation")
+def mcp_client_remove(name_or_id: str, yes: bool) -> None:
+    """Remove an external MCP server and its stored secrets."""
+    store, secrets = _get_mcp_store_and_secrets()
+
+    row = None
+    try:
+        server_id = int(name_or_id)
+        row = store.get(server_id)
+    except ValueError:
+        row = store.get_by_name(name_or_id)
+
+    if row is None:
+        click.secho(f"Server {name_or_id!r} not found.", fg="red")
+        raise SystemExit(1)
+
+    if not yes:
+        click.confirm(f"Remove MCP server '{row['name']}' (id={row['id']})?", abort=True)
+
+    secrets.delete(row["name"])
+    store.delete(row["id"])
+    click.secho(f"Removed MCP server '{row['name']}'.", fg="green")
+
+
+@mcp_client_group.command(name="test")
+@click.argument("name_or_id")
+def mcp_client_test(name_or_id: str) -> None:
+    """Test connection to an external MCP server and list its tools."""
+    import asyncio
+
+    store, secrets = _get_mcp_store_and_secrets()
+
+    row = None
+    try:
+        server_id = int(name_or_id)
+        row = store.get(server_id)
+    except ValueError:
+        row = store.get_by_name(name_or_id)
+
+    if row is None:
+        click.secho(f"Server {name_or_id!r} not found.", fg="red")
+        raise SystemExit(1)
+
+    from openocto.mcp_client import MCPClient, MCPClientError
+    headers = secrets.get_headers(row["name"])
+
+    async def _run():
+        client = MCPClient(row["name"], row["url"], headers=headers or None, timeout=15.0)
+        try:
+            click.echo(f"Connecting to {row['url']} ...")
+            await client.connect()
+            tools = await client.list_tools()
+            click.secho(f"✓ Connected. {len(tools)} tool(s):", fg="green")
+            for t in tools:
+                desc = (t.get("description") or "")[:60]
+                click.echo(f"  {t['name']:<40} {desc}")
+        except MCPClientError as exc:
+            click.secho(f"✗ Connection failed: {exc}", fg="red")
+            raise SystemExit(1)
+        finally:
+            await client.close()
+
+    asyncio.run(_run())
 
 
 @main.group(name="config")

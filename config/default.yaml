@@ -124,6 +124,7 @@ skills:
     - file_ops
     - launcher
     - media_player
+    - plane_status               # read-only digest; auto-disabled if Plane creds absent
 
   time:
     default_timezone: null      # null = host local time, or e.g. "Europe/Moscow"
@@ -170,6 +171,12 @@ mcp:
   host: "0.0.0.0"             # bind to all interfaces for LAN access
   port: 8765
   require_auth: true           # token in ~/.openocto/mcp-token (chmod 600)
+
+# MCP Client — connect to external MCP servers and expose their tools as skills
+# Add servers via `openocto mcp-client add` or the /mcp web admin page.
+mcp_client:
+  enabled: true                # set false to disable all external MCP connections
+  connect_timeout: 10.0        # seconds per server connect attempt
 
 # mDNS / Bonjour — publish OpenOcto as `<hostname>.local` on the LAN so
 # mobile apps and other clients can find it without typing an IP address.

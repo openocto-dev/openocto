@@ -19,16 +19,32 @@ logger = logging.getLogger(__name__)
 
 BUILTIN_FALLBACK = "hey_jarvis_v0.1"
 
+# Directory where openwakeword stores its bundled .onnx models
+def _builtin_models_dir() -> "Path":
+    from pathlib import Path
+    import openwakeword
+    return Path(openwakeword.__file__).parent / "resources" / "models"
+
+
+def _builtin_model_path(model_name: str) -> "Path | None":
+    """Return the path to a built-in openwakeword model file, or None if not found."""
+    p = _builtin_models_dir() / f"{model_name}.onnx"
+    return p if p.exists() else None
+
 
 def _ensure_builtin_downloaded(model_name: str) -> None:
     """Download openwakeword feature models + the specified built-in wake word model.
 
     This is idempotent — skips files that already exist.
+    openwakeword 0.4.x ships models bundled in the package; download_models may not exist.
     """
     try:
         from openwakeword.utils import download_models
         print(f"{DOWN}  Downloading wake word feature models...")
         download_models(model_names=[model_name])
+    except (ImportError, AttributeError):
+        # openwakeword 0.4+: models are bundled, no download needed
+        logger.debug("openwakeword.utils.download_models not available — using bundled models")
     except Exception as e:
         logger.warning("Failed to download openwakeword models: %s", e)
 
@@ -69,8 +85,7 @@ class OpenWakeWordDetector(WakeWordDetector):
             self._model_name = model_path.stem
             try:
                 self._oww = Model(
-                    wakeword_models=[str(model_path)],
-                    inference_framework="onnx",
+                    wakeword_model_paths=[str(model_path)],
                 )
                 logger.info(
                     "Wake word detector loaded: model=%s (file), threshold=%.2f",
@@ -91,7 +106,12 @@ class OpenWakeWordDetector(WakeWordDetector):
             builtin_name = config.model
 
         self._model_name = builtin_name
-        self._oww = Model(wakeword_models=[builtin_name], inference_framework="onnx")
+        builtin_path = _builtin_model_path(builtin_name)
+        if builtin_path is not None:
+            self._oww = Model(wakeword_model_paths=[str(builtin_path)])
+        else:
+            # Bundled model not found — load all pre-trained models as fallback
+            self._oww = Model()
         logger.info(
             "Wake word detector loaded: model=%s (builtin), threshold=%.2f",
             builtin_name, config.threshold,

@@ -433,3 +433,273 @@ async def resolve_note(request: web.Request) -> web.Response:
 
     hs.resolve_note(note_id)
     return web.json_response({"resolved": True, "id": note_id})
+
+
+# ── MCP Clients ───────────────────────────────────────────────────────────────
+
+import re as _re
+_MCP_NAME_RE = _re.compile(r"^[a-zA-Z][a-zA-Z0-9_-]{0,63}$")
+
+
+def _mcp_get_registry(octo):
+    """Return (store, secrets, registry) or None if unavailable."""
+    store = getattr(octo, "_mcp_store", None)
+    secrets = getattr(octo, "_mcp_secrets", None)
+    registry = getattr(octo, "_mcp_client_registry", None)
+    if store is None or secrets is None:
+        return None
+    return store, secrets, registry
+
+
+def _mcp_row_to_response(row: dict, registry=None) -> dict:
+    """Build a response-safe dict from a DB row + live registry status."""
+    resp = {
+        "id": row["id"],
+        "name": row["name"],
+        "url": row["url"],
+        "transport": row["transport"],
+        "tool_allowlist": row.get("tool_allowlist") or [],
+        "enabled": bool(row["enabled"]),
+        "last_status": row.get("last_status"),
+        "last_error": row.get("last_error"),
+        "last_checked_at": row.get("last_checked_at"),
+        "created_at": row.get("created_at"),
+    }
+    if registry is not None:
+        status = registry.get_status(row["id"])
+        resp["tool_count"] = status.get("tool_count", 0)
+        resp["tools"] = registry.list_tool_names(row["id"])
+        resp["unhealthy"] = status.get("unhealthy", False)
+    return resp
+
+
+@routes.get("/api/v1/mcp/servers")
+@require_api_token
+async def mcp_list_servers(request: web.Request) -> web.Response:
+    octo = request.app["octo"]
+    result = _mcp_get_registry(octo)
+    if result is None:
+        return _service_unavailable("MCP client not available")
+    store, secrets, registry = result
+    skills = getattr(octo, "_skills", None)
+    builtin = {
+        "name": "openocto",
+        "url": None,
+        "builtin": True,
+        "tool_count": len(skills) if skills else 0,
+        "tools": skills.names() if skills else [],
+    }
+    servers = [_mcp_row_to_response(row, registry) for row in store.list()]
+    return web.json_response({"builtin": builtin, "servers": servers})
+
+
+@routes.post("/api/v1/mcp/servers")
+@require_api_token
+async def mcp_create_server(request: web.Request) -> web.Response:
+    octo = request.app["octo"]
+    result = _mcp_get_registry(octo)
+    if result is None:
+        return _service_unavailable("MCP client not available")
+    store, secrets, registry = result
+
+    data = await _read_json(request)
+    name = data.get("name", "").strip()
+    url = data.get("url", "").strip()
+
+    if not _MCP_NAME_RE.match(name):
+        return _bad_request("name must match ^[a-zA-Z][a-zA-Z0-9_-]{0,63}$")
+    if not url.startswith(("http://", "https://")):
+        return _bad_request("url must start with http:// or https://")
+
+    headers = data.get("headers") or {}
+    tool_allowlist = data.get("tool_allowlist") or []
+    transport = data.get("transport", "http")
+    enabled = bool(data.get("enabled", True))
+
+    try:
+        server_id = store.create(
+            name, url,
+            transport=transport,
+            tool_allowlist=tool_allowlist,
+            enabled=enabled,
+        )
+    except ValueError as exc:
+        return _bad_request(str(exc))
+
+    if headers:
+        secrets.set_headers(name, headers)
+
+    row = store.get(server_id)
+    if registry and enabled:
+        try:
+            await registry.add_server(row)
+        except Exception as exc:
+            logger.warning("MCP registry.add_server failed: %s", exc)
+
+    return web.json_response(_mcp_row_to_response(row, registry), status=201)
+
+
+@routes.get("/api/v1/mcp/servers/{server_id}")
+@require_api_token
+async def mcp_get_server(request: web.Request) -> web.Response:
+    octo = request.app["octo"]
+    result = _mcp_get_registry(octo)
+    if result is None:
+        return _service_unavailable("MCP client not available")
+    store, secrets, registry = result
+
+    try:
+        server_id = int(request.match_info["server_id"])
+    except ValueError:
+        return _bad_request("Invalid server_id")
+
+    row = store.get(server_id)
+    if row is None:
+        return _not_found(f"Server {server_id} not found")
+    return web.json_response(_mcp_row_to_response(row, registry))
+
+
+@routes.patch("/api/v1/mcp/servers/{server_id}")
+@require_api_token
+async def mcp_update_server(request: web.Request) -> web.Response:
+    octo = request.app["octo"]
+    result = _mcp_get_registry(octo)
+    if result is None:
+        return _service_unavailable("MCP client not available")
+    store, secrets, registry = result
+
+    try:
+        server_id = int(request.match_info["server_id"])
+    except ValueError:
+        return _bad_request("Invalid server_id")
+
+    row = store.get(server_id)
+    if row is None:
+        return _not_found(f"Server {server_id} not found")
+
+    data = await _read_json(request)
+    needs_refresh = False
+
+    update_fields = {}
+    if "url" in data:
+        url = data["url"].strip()
+        if not url.startswith(("http://", "https://")):
+            return _bad_request("url must start with http:// or https://")
+        update_fields["url"] = url
+        needs_refresh = True
+    if "enabled" in data:
+        update_fields["enabled"] = bool(data["enabled"])
+    if "tool_allowlist" in data:
+        update_fields["tool_allowlist"] = data["tool_allowlist"] or []
+        needs_refresh = True
+    if "transport" in data:
+        update_fields["transport"] = data["transport"]
+
+    if update_fields:
+        store.update(server_id, **update_fields)
+
+    if "headers" in data:
+        secrets.set_headers(row["name"], data["headers"] or {})
+        needs_refresh = True
+
+    if needs_refresh and registry:
+        try:
+            await registry.refresh_one(server_id)
+        except Exception as exc:
+            logger.warning("MCP registry.refresh_one failed: %s", exc)
+
+    row = store.get(server_id)
+    return web.json_response(_mcp_row_to_response(row, registry))
+
+
+@routes.delete("/api/v1/mcp/servers/{server_id}")
+@require_api_token
+async def mcp_delete_server(request: web.Request) -> web.Response:
+    octo = request.app["octo"]
+    result = _mcp_get_registry(octo)
+    if result is None:
+        return _service_unavailable("MCP client not available")
+    store, secrets, registry = result
+
+    try:
+        server_id = int(request.match_info["server_id"])
+    except ValueError:
+        return _bad_request("Invalid server_id")
+
+    row = store.get(server_id)
+    if row is None:
+        return _not_found(f"Server {server_id} not found")
+
+    if registry:
+        try:
+            await registry.remove_server(server_id)
+        except Exception as exc:
+            logger.warning("MCP registry.remove_server failed: %s", exc)
+
+    secrets.delete(row["name"])
+    store.delete(server_id)
+    return web.json_response({"deleted": True, "id": server_id})
+
+
+@routes.post("/api/v1/mcp/servers/{server_id}/test")
+@require_api_token
+async def mcp_test_server(request: web.Request) -> web.Response:
+    """Create an ephemeral client, connect, list tools, close.  No registry changes."""
+    octo = request.app["octo"]
+    result = _mcp_get_registry(octo)
+    if result is None:
+        return _service_unavailable("MCP client not available")
+    store, secrets, registry = result
+
+    try:
+        server_id = int(request.match_info["server_id"])
+    except ValueError:
+        return _bad_request("Invalid server_id")
+
+    row = store.get(server_id)
+    if row is None:
+        return _not_found(f"Server {server_id} not found")
+
+    from openocto.mcp_client import MCPClient, MCPClientError
+    headers = secrets.get_headers(row["name"])
+    client = MCPClient(row["name"], row["url"], headers=headers or None, timeout=15.0)
+    try:
+        await client.connect()
+        tools = await client.list_tools()
+        tool_names = [t.get("name") for t in tools]
+        return web.json_response({"connected": True, "tools": tool_names, "tool_count": len(tools)})
+    except MCPClientError as exc:
+        return web.json_response(
+            {"connected": False, "error": str(exc)}, status=502
+        )
+    finally:
+        await client.close()
+
+
+@routes.post("/api/v1/mcp/servers/{server_id}/refresh")
+@require_api_token
+async def mcp_refresh_server(request: web.Request) -> web.Response:
+    """Re-connect a server and refresh its tools in the registry."""
+    octo = request.app["octo"]
+    result = _mcp_get_registry(octo)
+    if result is None:
+        return _service_unavailable("MCP client not available")
+    store, secrets, registry = result
+
+    try:
+        server_id = int(request.match_info["server_id"])
+    except ValueError:
+        return _bad_request("Invalid server_id")
+
+    row = store.get(server_id)
+    if row is None:
+        return _not_found(f"Server {server_id} not found")
+
+    if registry:
+        try:
+            await registry.refresh_one(server_id)
+        except Exception as exc:
+            logger.warning("MCP refresh failed: %s", exc)
+
+    row = store.get(server_id)
+    return web.json_response(_mcp_row_to_response(row, registry))

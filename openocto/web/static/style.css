@@ -836,11 +836,13 @@ body {
 
 /* Small buttons */
 .btn-sm {
+    width: auto;
     height: 32px;
     min-height: 32px;
     padding: 0 0.75em;
     font-size: 0.8rem;
     line-height: 32px;
+    margin-bottom: 0;
 }
 
 /* Compact action buttons */
@@ -848,6 +850,7 @@ body {
     width: auto;
     padding: 0 1.2em;
     font-size: 0.9rem;
+    margin-bottom: 0;
 }
 
 /* Button row */

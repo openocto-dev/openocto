@@ -154,7 +154,7 @@ async def api_analyze(request: web.Request) -> web.Response:
         "recommended": {
             "rms_speech_threshold": rms_threshold,
             "threshold": silero_threshold,
-            "silence_duration": 2.5,
+            "silence_duration": 1.5,
         },
         "analysis": {
             "silence_rms_max": silence_rms_max,

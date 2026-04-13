@@ -71,9 +71,14 @@ class AudioPlayer:
                     stream.write(audio_float[offset:end])
                     offset = end
 
-                # Wait for the stream to finish playing remaining buffer
+                # At this point all chunks are written; only the device's
+                # output buffer remains to drain. On PipeWire/ALSA the
+                # finished_callback can lag by ~1s, so the old hard 5s cap
+                # added perceivable pauses between TTS and auto-listen.
+                # A short bounded wait is sufficient — stream.stop() below
+                # will also block until the hardware finishes.
                 if not self._stop_event.is_set():
-                    finished_event.wait(timeout=5.0)
+                    finished_event.wait(timeout=0.5)
             finally:
                 stream.stop()
                 stream.close()
@@ -106,6 +111,33 @@ class AudioPlayer:
         fade = np.linspace(1.0, 0.0, len(tone)) ** 2
         tone = (tone * fade * volume).astype(np.float32)
         threading.Thread(target=sd.play, args=(tone, sample_rate), daemon=True).start()
+
+    def chime(self, ascending: bool = True, volume: float = 0.4) -> None:
+        """Play a two-note chime (non-blocking).
+
+        ascending=True  → C5 then E5 ("mic open", recording start)
+        ascending=False → E5 then C5 ("mic closed", recording end)
+        """
+        sample_rate = 22050
+        note_duration = 0.07
+        gap = 0.02
+        low_freq, high_freq = 523.25, 659.25  # C5, E5
+        f1, f2 = (low_freq, high_freq) if ascending else (high_freq, low_freq)
+
+        def _make_note(freq: float) -> np.ndarray:
+            t = np.linspace(0, note_duration, int(sample_rate * note_duration), endpoint=False)
+            tone = np.sin(2 * np.pi * freq * t).astype(np.float32)
+            # Short attack + smooth release so there's no click
+            attack_n = int(sample_rate * 0.005)
+            release_n = int(sample_rate * 0.03)
+            envelope = np.ones_like(tone)
+            envelope[:attack_n] = np.linspace(0.0, 1.0, attack_n)
+            envelope[-release_n:] = np.linspace(1.0, 0.0, release_n) ** 2
+            return (tone * envelope * volume).astype(np.float32)
+
+        silence = np.zeros(int(sample_rate * gap), dtype=np.float32)
+        chord = np.concatenate([_make_note(f1), silence, _make_note(f2)])
+        threading.Thread(target=sd.play, args=(chord, sample_rate), daemon=True).start()
 
     def stop(self) -> None:
         """Interrupt current playback (for barge-in)."""

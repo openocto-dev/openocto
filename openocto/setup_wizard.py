@@ -741,12 +741,32 @@ def _step_audio_devices() -> tuple[str | None, str | None]:
         return f"{d['name']}{tag}"
 
     # --- Microphone ---
+    # On PipeWire systems, prefer the "pipewire" ALSA device over raw hw:X,Y addresses.
+    # Raw hw: names appear in arecord but PortAudio can't open them when PipeWire owns the hardware.
+    def _mic_sort_key(item):
+        name = item[1]["name"].lower()
+        if name == "pipewire":
+            return 0
+        if name.startswith("default"):
+            return 1
+        if "hw:" in name:
+            return 3  # push raw hw: addresses to the bottom
+        return 2
+
+    inputs_sorted = sorted(inputs, key=_mic_sort_key)
     mic_choices = [questionary.Choice(title="System default", value=None)] + [
         questionary.Choice(title=_device_label(i, d), value=d["name"])
-        for i, d in inputs
+        for i, d in inputs_sorted
     ]
     input_device = _select(f"  {MIC} Microphone (input):", choices=mic_choices, default=mic_choices[0].value)
     click.secho(f"  {CHECK} Microphone: {input_device or 'system default'}", fg="green")
+
+    if input_device and "hw:" in input_device:
+        click.secho(
+            f"  {WARN}  Warning: raw ALSA device '{input_device}' may not work if PipeWire is running.\n"
+            "     If you get 'Device unavailable' errors, re-run the wizard and choose 'pipewire' or 'System default'.",
+            fg="yellow",
+        )
     click.echo()
 
     # --- Speaker ---
@@ -867,8 +887,8 @@ def _step_mic_calibration(input_device: int | str | None) -> tuple[float | None,
 
     # --- Phase 1: silence ---
     click.echo()
-    click.secho(f"  {MUTE} Phase 1/2 — stay quiet... (2 seconds)", fg="yellow", bold=True)
-    silence_audio = _record_chunk(input_device, duration=2.0)
+    click.secho(f"  {MUTE} Phase 1/2 — stay quiet... (3 seconds)", fg="yellow", bold=True)
+    silence_audio = _record_chunk(input_device, duration=3.0)
 
     if silence_audio is None or int(np.abs(silence_audio).max()) < 10:
         click.secho(f"  {WARN}  No audio detected. Check microphone.\n", fg="yellow")
@@ -881,8 +901,9 @@ def _step_mic_calibration(input_device: int | str | None) -> tuple[float | None,
         click.echo(f"     {i}...", nl=False)
         import time; time.sleep(1)
     click.echo()
-    click.secho(f"  {REC} Recording — speak now! (3 seconds)", fg="red", bold=True)
-    speech_audio = _record_chunk(input_device, duration=3.0)
+    click.secho(f"  {REC} Recording — speak now! (4 seconds)", fg="red", bold=True)
+    click.secho(f"     Say a full sentence, e.g. \"One two three four five, testing my microphone\"", fg="cyan")
+    speech_audio = _record_chunk(input_device, duration=4.0)
 
     if speech_audio is None:
         click.secho(f"  {WARN}  Recording failed.\n", fg="yellow")
@@ -937,20 +958,77 @@ def _step_mic_calibration(input_device: int | str | None) -> tuple[float | None,
             click.secho(f"  {CHECK} VAD threshold set to {vad_threshold}", fg="green")
 
     # --- Compute RMS speech threshold on RAW signal (before gain) ---
-    # This is critical: VAD uses raw RMS as fallback, so the threshold
-    # must match raw signal levels, not gained levels.
-    silence_rms = float(np.sqrt(np.mean(silence_audio.astype(np.float32) ** 2)))
-    speech_rms = float(np.sqrt(np.mean(speech_audio.astype(np.float32) ** 2)))
+    # Critical: must match runtime behavior. Runtime VAD processes audio in
+    # 80ms chunks (1280 samples @ 16kHz), so we calibrate on the SAME chunk size.
+    # Taking mean over the whole recording hides spikes in silence (keyboard,
+    # breath, USB mic noise) and pauses in speech — both cause false readings.
+    CHUNK = 1280  # matches BLOCKSIZE in openocto/audio/capture.py
 
-    if speech_rms > silence_rms * 1.5:
-        # Good separation — threshold at 60% between silence and speech
-        rms_threshold = int(silence_rms + (speech_rms - silence_rms) * 0.6)
+    def chunk_rms(audio: np.ndarray) -> np.ndarray:
+        audio_f = audio.astype(np.float32)
+        n_chunks = len(audio_f) // CHUNK
+        if n_chunks == 0:
+            return np.array([float(np.sqrt(np.mean(audio_f ** 2)))])
+        trimmed = audio_f[:n_chunks * CHUNK].reshape(n_chunks, CHUNK)
+        return np.sqrt(np.mean(trimmed ** 2, axis=1))
+
+    silence_chunks = chunk_rms(silence_audio)
+    speech_chunks = chunk_rms(speech_audio)
+
+    silence_max = float(silence_chunks.max())    # worst-case noise spike
+    silence_p95 = float(np.percentile(silence_chunks, 95))
+    # For speech, use a high percentile of the loudest chunks — ignores intra-word pauses
+    speech_loud = speech_chunks[speech_chunks > np.median(speech_chunks)]
+    speech_p25 = float(np.percentile(speech_loud, 25)) if len(speech_loud) > 0 else float(np.median(speech_chunks))
+    speech_p50 = float(np.median(speech_chunks))
+
+    # Separation ratio — tells us whether the mic can distinguish speech from noise
+    separation = speech_p25 / max(silence_max, 1.0)
+
+    if separation >= 2.5:
+        # Great separation — set threshold just above worst silence spike,
+        # with a 50% margin, but never above 80% of quiet speech.
+        rms_threshold = int(min(silence_max * 1.5, speech_p25 * 0.8))
+    elif separation >= 1.5:
+        # Marginal separation — place threshold at the geometric mean
+        rms_threshold = int(np.sqrt(silence_max * speech_p25))
     else:
-        # Poor separation (noisy VM, bad mic) — use 2x silence RMS
-        rms_threshold = int(silence_rms * 2.0)
+        # Poor separation — mic too noisy or speech too quiet.
+        # Use silence_max * 1.3 and warn the user.
+        rms_threshold = int(silence_max * 1.3)
+
     rms_threshold = max(50, min(rms_threshold, 5000))
 
-    click.echo(f"  {CHECK} RMS (raw) silence: {silence_rms:.0f}  |  speech: {speech_rms:.0f}  |  threshold: {rms_threshold}")
+    click.echo(
+        f"  {CHECK} RMS chunks — silence max={silence_max:.0f} p95={silence_p95:.0f}  "
+        f"| speech p50={speech_p50:.0f} p25(loud)={speech_p25:.0f}  "
+        f"| separation={separation:.1f}x  | threshold={rms_threshold}"
+    )
+
+    # --- Self-test: simulate runtime on the recordings ---
+    # Count false positives (silence chunks above threshold) and
+    # true positives (speech chunks above threshold). If bad, warn.
+    silence_false_pct = 100.0 * float(np.mean(silence_chunks > rms_threshold))
+    speech_true_pct = 100.0 * float(np.mean(speech_chunks > rms_threshold))
+
+    click.echo(
+        f"  {CHECK} Self-test: silence→speech={silence_false_pct:.0f}%  "
+        f"| speech→speech={speech_true_pct:.0f}%"
+    )
+
+    if silence_false_pct > 10:
+        click.secho(
+            f"  {WARN}  Background noise triggers false speech detection ({silence_false_pct:.0f}% of silence chunks).\n"
+            "     Possible causes: noisy USB mic (PS3 Eye, webcams), AC fan, near a speaker.\n"
+            "     The assistant may record nonstop during idle — consider a different mic or quieter room.",
+            fg="yellow",
+        )
+    if speech_true_pct < 50:
+        click.secho(
+            f"  {WARN}  Your voice barely registers ({speech_true_pct:.0f}% of speech chunks detected).\n"
+            "     Speak louder, move closer to the mic, or increase system input volume.",
+            fg="yellow",
+        )
 
     if mic_gain is None:
         click.secho(f"  {CHECK} Microphone level is good. Auto-gain enabled.", fg="green")
@@ -1022,23 +1100,55 @@ def _ensure_openwakeword() -> None:
         )
 
 
+def _is_raspberry_pi() -> bool:
+    """Detect if running on a Raspberry Pi (ARM CPU + Pi hardware marker)."""
+    try:
+        with open("/proc/cpuinfo") as f:
+            cpuinfo = f.read().lower()
+        if "raspberry pi" in cpuinfo or "bcm2" in cpuinfo:
+            return True
+    except Exception:
+        pass
+    try:
+        with open("/sys/firmware/devicetree/base/model") as f:
+            return "raspberry pi" in f.read().lower()
+    except Exception:
+        return False
+
+
 def _step_whisper_model() -> str:
     """Step 2: Choose Whisper model size."""
     click.secho(f"{MIC} [3/8] Speech Recognition", bold=True)
     click.echo()
 
-    models = [
-        ("tiny",   "75 MB",  f"{BOLT} Fastest, lower accuracy"),
-        ("base",   "142 MB", f"{BOLT} Fast, decent accuracy"),
-        ("small",  "466 MB", f"{STAR} Recommended - great balance"),
-        ("medium", "1.5 GB", f"{STAR} Best accuracy, slower"),
-    ]
+    is_pi = _is_raspberry_pi()
+    # On Raspberry Pi, whisper.cpp is CPU-bound and `small` takes ~50-60 seconds
+    # per utterance — unusable for a voice assistant. `base` is the fast-but-accurate
+    # sweet spot; `tiny` is the fallback if base is still too slow.
+    if is_pi:
+        click.secho(f"  {BULB} Raspberry Pi detected — recommending faster models.", fg="cyan")
+        click.echo()
+        models = [
+            ("tiny",   "75 MB",  f"{BOLT} Fastest (~3 sec), OK for short commands"),
+            ("base",   "142 MB", f"{STAR} Recommended for Pi (~6 sec, good accuracy)"),
+            ("small",  "466 MB", f"{WARN}  Too slow on Pi (~60 sec per phrase)"),
+            ("medium", "1.5 GB", f"{WARN}  Will not fit Pi memory comfortably"),
+        ]
+        default_model = "base"
+    else:
+        models = [
+            ("tiny",   "75 MB",  f"{BOLT} Fastest, lower accuracy"),
+            ("base",   "142 MB", f"{BOLT} Fast, decent accuracy"),
+            ("small",  "466 MB", f"{STAR} Recommended - great balance"),
+            ("medium", "1.5 GB", f"{STAR} Best accuracy, slower"),
+        ]
+        default_model = "small"
 
     whisper_choices = [
         questionary.Choice(title=f"{name:8s} [{size:>6s}]  {desc}", value=name)
         for name, size, desc in models
     ]
-    model_size = _select("  Choose model:", choices=whisper_choices, default="small")
+    model_size = _select("  Choose model:", choices=whisper_choices, default=default_model)
     click.echo()
     return model_size
 

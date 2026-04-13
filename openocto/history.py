@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import sqlite3
 from pathlib import Path
 from typing import Any
@@ -84,6 +85,24 @@ CREATE TABLE IF NOT EXISTS user_facts (
 );
 CREATE INDEX IF NOT EXISTS idx_facts_user
     ON user_facts(user_id, is_deleted);
+
+CREATE TABLE IF NOT EXISTS mcp_servers (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    name               TEXT UNIQUE NOT NULL,
+    url                TEXT NOT NULL DEFAULT '',
+    transport          TEXT NOT NULL DEFAULT 'http',
+    command            TEXT,
+    args_json          TEXT NOT NULL DEFAULT '[]',
+    tool_allowlist_json TEXT NOT NULL DEFAULT '[]',
+    enabled            INTEGER NOT NULL DEFAULT 1,
+    created_at         TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at         TEXT NOT NULL DEFAULT (datetime('now')),
+    last_status        TEXT,
+    last_error         TEXT,
+    last_checked_at    TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_mcp_servers_enabled
+    ON mcp_servers(enabled);
 """
 
 _FTS_SCHEMA = """\
@@ -103,12 +122,31 @@ class HistoryStore:
         path = db_path or _DEFAULT_DB_PATH
         path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(str(path), check_same_thread=False)
+        # Protect the DB file — it may contain sensitive data (mcp_servers, etc.)
+        try:
+            os.chmod(str(path), 0o600)
+        except OSError:
+            pass  # may fail on some filesystems (e.g. FAT, Windows) — ignore
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA foreign_keys=ON")
         self._conn.executescript(_SCHEMA)
+        self._migrate_mcp_servers()
         self._init_fts()
         logger.info("History DB opened: %s", path)
+
+    def _migrate_mcp_servers(self) -> None:
+        """Add columns introduced after initial schema (idempotent)."""
+        existing = {
+            row[1] for row in self._conn.execute("PRAGMA table_info(mcp_servers)").fetchall()
+        }
+        if "command" not in existing:
+            self._conn.execute("ALTER TABLE mcp_servers ADD COLUMN command TEXT")
+        if "args_json" not in existing:
+            self._conn.execute(
+                "ALTER TABLE mcp_servers ADD COLUMN args_json TEXT NOT NULL DEFAULT '[]'"
+            )
+        self._conn.commit()
 
     def _init_fts(self) -> None:
         """Create FTS5 virtual table if not exists."""

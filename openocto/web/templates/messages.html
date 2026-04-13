@@ -229,11 +229,16 @@
         return d.innerHTML;
     }
 
+    // Guard that suppresses live-polling while a send is in flight,
+    // so the optimistic user bubble isn't duplicated by a racing poll.
+    var sending = false;
+
     // Send message
     function sendMessage() {
         var text = input.value.trim();
         if (!text) return;
 
+        sending = true;
         input.value = '';
         addBubble('user', text);
 
@@ -287,6 +292,7 @@
             sendBtn.disabled = false;
             input.disabled = false;
             input.focus();
+            sending = false;
         });
     }
 
@@ -303,6 +309,9 @@
     // browser, the voice pipeline) appear here without a manual refresh.
     function pollNewMessages() {
         if (!userId) return;
+        // Skip polling while a send is in flight — avoids the race where we'd
+        // fetch and re-render our own just-sent message on top of the optimistic bubble.
+        if (sending) return;
         var url = '/api/messages/poll?user_id=' + encodeURIComponent(userId)
                 + '&persona=' + encodeURIComponent(persona)
                 + '&after_id=' + latestMessageId;
@@ -315,6 +324,11 @@
                 var savedScroll = messages.scrollTop;
                 data.messages.forEach(function(m) {
                     if (m.id <= latestMessageId) return;
+                    // Belt-and-suspenders: skip if this exact id is already in the DOM
+                    if (messages.querySelector('[data-msg-id="' + m.id + '"]')) {
+                        latestMessageId = Math.max(latestMessageId, m.id);
+                        return;
+                    }
                     addBubble(m.role, m.content, m.created_at, m.id);
                     latestMessageId = m.id;
                 });

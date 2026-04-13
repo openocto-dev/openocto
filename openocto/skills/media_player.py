@@ -139,9 +139,12 @@ class MediaPlayerSkill(Skill):
         # Replace any existing VLC.
         self._stop(quiet=True)
 
+        # Leave the main interface at VLC's platform default (Qt on Linux,
+        # macOS on macOS) so the on-screen controls stay clickable. We piggy-back
+        # the RC interface as an extra channel to receive commands from the voice
+        # pipeline — that's what --extraintf + --rc-host are for.
         cmd = [
             self._binary,
-            "--intf", "dummy",
             "--extraintf", "rc",
             "--rc-host", f"{_RC_HOST}:{self._rc_port}",
             "--no-video-title-show",
