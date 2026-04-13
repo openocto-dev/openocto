@@ -50,13 +50,14 @@ def collect_system_info() -> dict:
         info["disk_used_gb"] = round(disk.used / (1024 ** 3), 1)
         info["disk_free_gb"] = round(disk.free / (1024 ** 3), 1)
         info["disk_percent"] = round(disk.percent, 1)
-        temps = psutil.sensors_temperatures()
-        if temps:
-            for key in ("cpu_thermal", "cpu-thermal", "coretemp"):
-                if key in temps and temps[key]:
-                    info["cpu_temp"] = round(temps[key][0].current, 1)
-                    break
-    except ImportError:
+        if hasattr(psutil, "sensors_temperatures"):
+            temps = psutil.sensors_temperatures()
+            if temps:
+                for key in ("cpu_thermal", "cpu-thermal", "coretemp"):
+                    if key in temps and temps[key]:
+                        info["cpu_temp"] = round(temps[key][0].current, 1)
+                        break
+    except Exception:
         pass
     return info
 

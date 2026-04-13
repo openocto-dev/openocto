@@ -5,36 +5,63 @@
 <h2>{{ t('cal.title') }}</h2>
 <p>{{ t('cal.desc') }}</p>
 
-<!-- Current values -->
-<details open>
-    <summary>{{ t('cal.current') }}</summary>
-    <div class="card-grid" style="margin-top:1rem">
-        <div><small>{{ t('cal.silero_threshold') }}</small><br><strong id="cur-threshold">{{ current.threshold }}</strong></div>
-        <div><small>{{ t('cal.rms_threshold') }}</small><br><strong id="cur-rms">{{ current.rms_speech_threshold }}</strong></div>
-        <div><small>{{ t('cal.silence_duration') }}</small><br><strong id="cur-silence">{{ current.silence_duration }}s</strong></div>
-        <div><small>{{ t('cal.mic_gain') }}</small><br><strong id="cur-gain">{{ current.mic_gain or t('cal.auto') }}</strong></div>
+<!-- ── Microphone ────────────────────────────────────────────────── -->
+<section style="border:1px solid var(--pico-muted-border-color); border-radius:var(--pico-border-radius); padding:1.25rem 1.5rem; margin-bottom:1.5rem;">
+    <h3 style="margin-top:0; margin-bottom:1rem;">🎙 {{ t('cal.input_device') }}</h3>
+
+    <label for="device-select">{{ t('cal.input_device') }}</label>
+    <select id="device-select" style="margin-bottom:1.25rem;">
+        {% for d in input_devices %}
+        <option value="{{ d.index }}"{% if d.index == current_device_index %} selected{% endif %}>{{ d.name }}</option>
+        {% endfor %}
+        {% if not input_devices %}<option value="">—</option>{% endif %}
+    </select>
+
+    <!-- Current VAD values -->
+    <details style="margin-bottom:1.25rem;">
+        <summary><small>{{ t('cal.current') }}</small></summary>
+        <div class="card-grid" style="margin-top:0.75rem;">
+            <div><small>{{ t('cal.silero_threshold') }}</small><br><strong id="cur-threshold">{{ current.threshold }}</strong></div>
+            <div><small>{{ t('cal.rms_threshold') }}</small><br><strong id="cur-rms">{{ current.rms_speech_threshold }}</strong></div>
+            <div><small>{{ t('cal.silence_duration') }}</small><br><strong id="cur-silence">{{ current.silence_duration }}s</strong></div>
+            <div><small>{{ t('cal.mic_gain') }}</small><br><strong id="cur-gain">{{ current.mic_gain or t('cal.auto') }}</strong></div>
+        </div>
+    </details>
+
+    <article style="margin-bottom:0.75rem;">
+        <h4 style="margin-top:0;">{{ t('cal.step1') }}</h4>
+        <p style="margin-bottom:0.75rem;">{{ t('cal.step1_desc') }}</p>
+        <button id="btn-silence" onclick="recordPhase('silence', 3)">{{ t('cal.record_silence') }}</button>
+        <div id="silence-status"></div>
+        <canvas id="chart-silence" height="120" style="display:none; width:100%; margin-top:1rem;"></canvas>
+        <div id="silence-stats" style="display:none; margin-top:0.5rem;"></div>
+    </article>
+
+    <article style="margin-bottom:0;">
+        <h4 style="margin-top:0;">{{ t('cal.step2') }}</h4>
+        <p style="margin-bottom:0.75rem;">{{ t('cal.step2_desc') }}</p>
+        <button id="btn-speech" onclick="recordPhase('speech', 5)">{{ t('cal.record_speech') }}</button>
+        <div id="speech-status"></div>
+        <canvas id="chart-speech" height="120" style="display:none; width:100%; margin-top:1rem;"></canvas>
+        <div id="speech-stats" style="display:none; margin-top:0.5rem;"></div>
+    </article>
+</section>
+
+<!-- ── Speaker ──────────────────────────────────────────────────── -->
+<section style="border:1px solid var(--pico-muted-border-color); border-radius:var(--pico-border-radius); padding:1.25rem 1.5rem; margin-bottom:1.5rem;">
+    <h3 style="margin-top:0; margin-bottom:1rem;">🔊 {{ t('cal.output_device') }}</h3>
+    <div style="display:flex; gap:0.75rem; align-items:center;">
+        <select id="output-select" style="flex:1; margin-bottom:0;">
+            {% for d in output_devices %}
+            <option value="{{ d.index }}"{% if d.index == current_output_index %} selected{% endif %}>{{ d.name }}</option>
+            {% endfor %}
+            {% if not output_devices %}<option value="">—</option>{% endif %}
+        </select>
+        <button id="btn-test-output" class="outline" style="margin-bottom:0; white-space:nowrap;" onclick="testOutput()">{{ t('cal.test_output') }}</button>
+        <button id="btn-save-output" class="secondary" style="margin-bottom:0; white-space:nowrap;" onclick="saveOutput()">{{ t('cal.save_output') }}</button>
     </div>
-</details>
-
-<!-- Step 1: Silence -->
-<article>
-    <h3>{{ t('cal.step1') }}</h3>
-    <p>{{ t('cal.step1_desc') }}</p>
-    <button id="btn-silence" onclick="recordPhase('silence', 3)">{{ t('cal.record_silence') }}</button>
-    <div id="silence-status"></div>
-    <canvas id="chart-silence" height="120" style="display:none; width:100%; margin-top:1rem;"></canvas>
-    <div id="silence-stats" style="display:none; margin-top:0.5rem;"></div>
-</article>
-
-<!-- Step 2: Speech -->
-<article>
-    <h3>{{ t('cal.step2') }}</h3>
-    <p>{{ t('cal.step2_desc') }}</p>
-    <button id="btn-speech" onclick="recordPhase('speech', 5)">{{ t('cal.record_speech') }}</button>
-    <div id="speech-status"></div>
-    <canvas id="chart-speech" height="120" style="display:none; width:100%; margin-top:1rem;"></canvas>
-    <div id="speech-stats" style="display:none; margin-top:0.5rem;"></div>
-</article>
+    <div id="output-status" style="margin-top:0.5rem; min-height:1.2em;"></div>
+</section>
 
 <!-- Step 3: Results -->
 <article id="results-section" style="display:none;">
@@ -65,7 +92,66 @@ const I18N = {
     recorded: '{{ t("cal.recorded") }}',
     re_record: '{{ t("cal.re_record") }}',
     saved: '{{ t("cal.saved") }}',
+    output_saved: '{{ t("cal.output_saved") }}',
+    output_testing: '{{ t("cal.output_testing") }}',
 };
+
+function testOutput() {
+    const sel = document.getElementById('output-select');
+    const status = document.getElementById('output-status');
+    const btn = document.getElementById('btn-test-output');
+    const deviceIndex = sel && sel.value !== '' ? parseInt(sel.value) : null;
+
+    btn.disabled = true;
+    status.innerHTML = '<small>' + I18N.output_testing + '</small>';
+
+    fetch('/api/audio/test-output', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ device_index: deviceIndex }),
+    })
+    .then(r => r.json())
+    .then(result => {
+        btn.disabled = false;
+        if (!result.ok) {
+            status.innerHTML = '<small style="color:var(--pico-del-color)">{{ t("common.error") }}: ' + (result.error || 'unknown') + '</small>';
+        } else {
+            status.innerHTML = '';
+        }
+    })
+    .catch(err => {
+        btn.disabled = false;
+        status.innerHTML = '<small style="color:var(--pico-del-color)">{{ t("common.error") }}: ' + err + '</small>';
+    });
+}
+
+function saveOutput() {
+    const sel = document.getElementById('output-select');
+    const status = document.getElementById('output-status');
+    const btn = document.getElementById('btn-save-output');
+    const deviceIndex = sel && sel.value !== '' ? parseInt(sel.value) : null;
+
+    btn.disabled = true;
+
+    fetch('/api/audio/save-output', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ device_index: deviceIndex }),
+    })
+    .then(r => r.json())
+    .then(result => {
+        btn.disabled = false;
+        if (result.ok) {
+            status.innerHTML = '<small style="color:var(--pico-ins-color)">' + I18N.output_saved + '</small>';
+        } else {
+            status.innerHTML = '<small style="color:var(--pico-del-color)">{{ t("common.error") }}: ' + (result.error || 'unknown') + '</small>';
+        }
+    })
+    .catch(err => {
+        btn.disabled = false;
+        status.innerHTML = '<small style="color:var(--pico-del-color)">{{ t("common.error") }}: ' + err + '</small>';
+    });
+}
 
 function recordPhase(phase, duration) {
     const btn = document.getElementById('btn-' + phase);
@@ -89,10 +175,13 @@ function recordPhase(phase, duration) {
         }
     }, 1000);
 
+    const deviceSel = document.getElementById('device-select');
+    const deviceIndex = deviceSel && deviceSel.value !== '' ? parseInt(deviceSel.value) : null;
+
     fetch('/api/calibration/record', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ duration: duration }),
+        body: JSON.stringify({ duration: duration, device_index: deviceIndex }),
     })
     .then(r => {
         if (!r.ok) return r.json().then(e => { throw new Error(e.error || r.statusText); });

@@ -13,8 +13,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "nav.messages": "Messages",
         "nav.config": "Config",
         "nav.memory": "Memory",
-        "nav.settings": "Settings",
-        "nav.calibration": "Mic Calibration",
+        "nav.settings": "Appearance",
+        "nav.calibration": "Audio",
         "nav.wizard": "Setup Wizard",
         "nav.users": "Users",
         "nav.personas": "Personas",
@@ -112,9 +112,14 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "mem.category": "Category",
         "mem.source": "Source",
 
-        # -- Calibration --
-        "cal.title": "Microphone Calibration",
-        "cal.desc": "Record silence and speech to find optimal VAD thresholds.",
+        # -- Audio --
+        "cal.title": "Audio",
+        "cal.desc": "Configure microphone and speaker, then calibrate voice activity detection.",
+        "cal.output_device": "Speaker output",
+        "cal.test_output": "Test",
+        "cal.save_output": "Save output device",
+        "cal.output_saved": "Output device saved.",
+        "cal.output_testing": "Playing…",
         "cal.current": "Current Settings",
         "cal.silero_threshold": "Silero threshold",
         "cal.rms_threshold": "RMS threshold",
@@ -139,6 +144,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "cal.reset": "Reset",
         "cal.analysis": "Analysis details",
         "cal.saved": "Saved! Settings applied immediately (no restart needed).",
+        "cal.input_device": "Microphone source",
 
         # -- Settings --
         "settings.title": "Settings",
@@ -240,8 +246,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "nav.messages": "Сообщения",
         "nav.config": "Настройки",
         "nav.memory": "Память",
-        "nav.settings": "Параметры",
-        "nav.calibration": "Калибровка",
+        "nav.settings": "Внешний вид",
+        "nav.calibration": "Звук",
         "nav.wizard": "Мастер настройки",
         "nav.users": "Пользователи",
         "nav.personas": "Персоны",
@@ -340,8 +346,13 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "mem.source": "Источник",
 
         # -- Calibration --
-        "cal.title": "Калибровка микрофона",
-        "cal.desc": "Запишите тишину и речь для настройки порогов VAD.",
+        "cal.title": "Звук",
+        "cal.desc": "Настройте микрофон и динамик, затем откалибруйте VAD.",
+        "cal.output_device": "Динамик (выход)",
+        "cal.test_output": "Тест",
+        "cal.save_output": "Сохранить устройство",
+        "cal.output_saved": "Устройство вывода сохранено.",
+        "cal.output_testing": "Воспроизведение…",
         "cal.current": "Текущие настройки",
         "cal.silero_threshold": "Порог Silero",
         "cal.rms_threshold": "Порог RMS",
@@ -366,6 +377,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "cal.reset": "Сбросить",
         "cal.analysis": "Подробности анализа",
         "cal.saved": "Сохранено! Настройки применены без перезапуска.",
+        "cal.input_device": "Источник записи",
 
         # -- Settings --
         "settings.title": "Параметры",
@@ -467,8 +479,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "nav.messages": "消息",
         "nav.config": "配置",
         "nav.memory": "记忆",
-        "nav.settings": "设置",
-        "nav.calibration": "麦克风校准",
+        "nav.settings": "外观",
+        "nav.calibration": "音频",
         "nav.wizard": "设置向导",
         "nav.users": "用户",
         "nav.personas": "角色",
@@ -565,8 +577,13 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "mem.source": "来源",
 
         # -- Calibration --
-        "cal.title": "麦克风校准",
-        "cal.desc": "录制静音和语音以找到最佳VAD阈值。",
+        "cal.title": "音频",
+        "cal.desc": "配置麦克风和扬声器，然后校准VAD。",
+        "cal.output_device": "扬声器输出",
+        "cal.test_output": "测试",
+        "cal.save_output": "保存输出设备",
+        "cal.output_saved": "输出设备已保存。",
+        "cal.output_testing": "播放中…",
         "cal.current": "当前设置",
         "cal.silero_threshold": "Silero阈值",
         "cal.rms_threshold": "RMS阈值",
@@ -591,6 +608,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "cal.reset": "重置",
         "cal.analysis": "分析详情",
         "cal.saved": "已保存！设置已立即生效（无需重启）。",
+        "cal.input_device": "录音来源",
 
         # -- Settings --
         "settings.title": "设置",
@@ -691,8 +709,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "nav.messages": "Nachrichten",
         "nav.config": "Konfiguration",
         "nav.memory": "Gedächtnis",
-        "nav.settings": "Einstellungen",
-        "nav.calibration": "Mikrofon-Kalibrierung",
+        "nav.settings": "Darstellung",
+        "nav.calibration": "Audio",
         "nav.wizard": "Einrichtungsassistent",
         "nav.users": "Benutzer",
         "nav.personas": "Personas",
@@ -789,8 +807,13 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "mem.source": "Quelle",
 
         # -- Calibration --
-        "cal.title": "Mikrofon-Kalibrierung",
-        "cal.desc": "Stille und Sprache aufnehmen, um optimale VAD-Schwellenwerte zu finden.",
+        "cal.title": "Audio",
+        "cal.desc": "Mikrofon und Lautsprecher konfigurieren, dann VAD kalibrieren.",
+        "cal.output_device": "Lautsprecherausgang",
+        "cal.test_output": "Test",
+        "cal.save_output": "Ausgabegerät speichern",
+        "cal.output_saved": "Ausgabegerät gespeichert.",
+        "cal.output_testing": "Wird abgespielt…",
         "cal.current": "Aktuelle Einstellungen",
         "cal.silero_threshold": "Silero-Schwellenwert",
         "cal.rms_threshold": "RMS-Schwellenwert",
@@ -815,6 +838,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "cal.reset": "Zurücksetzen",
         "cal.analysis": "Analysedetails",
         "cal.saved": "Gespeichert! Einstellungen sofort angewendet (kein Neustart nötig).",
+        "cal.input_device": "Mikrofonquelle",
 
         # -- Settings --
         "settings.title": "Einstellungen",
@@ -915,8 +939,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "nav.messages": "Mensajes",
         "nav.config": "Configuración",
         "nav.memory": "Memoria",
-        "nav.settings": "Ajustes",
-        "nav.calibration": "Calibración",
+        "nav.settings": "Apariencia",
+        "nav.calibration": "Audio",
         "nav.wizard": "Asistente",
         "nav.users": "Usuarios",
         "nav.personas": "Personas",
@@ -1013,8 +1037,13 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "mem.source": "Fuente",
 
         # -- Calibration --
-        "cal.title": "Calibración del micrófono",
-        "cal.desc": "Grabe silencio y voz para encontrar los umbrales VAD óptimos.",
+        "cal.title": "Audio",
+        "cal.desc": "Configure el micrófono y el altavoz, luego calibre el VAD.",
+        "cal.output_device": "Salida de altavoz",
+        "cal.test_output": "Probar",
+        "cal.save_output": "Guardar dispositivo",
+        "cal.output_saved": "Dispositivo de salida guardado.",
+        "cal.output_testing": "Reproduciendo…",
         "cal.current": "Ajustes actuales",
         "cal.silero_threshold": "Umbral Silero",
         "cal.rms_threshold": "Umbral RMS",
@@ -1039,6 +1068,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "cal.reset": "Restablecer",
         "cal.analysis": "Detalles del análisis",
         "cal.saved": "¡Guardado! Ajustes aplicados de inmediato (sin reinicio).",
+        "cal.input_device": "Fuente de grabación",
 
         # -- Settings --
         "settings.title": "Ajustes",

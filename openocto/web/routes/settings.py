@@ -11,15 +11,20 @@ from openocto.web.i18n import SUPPORTED_LANGUAGES
 routes = web.RouteTableDef()
 
 
-@routes.get("/settings")
+@routes.get("/appearance")
 @aiohttp_jinja2.template("settings.html")
-async def settings_page(request: web.Request) -> dict:
+async def appearance_page(request: web.Request) -> dict:
     return {
         "page": "settings",
         "version": __version__,
         "supported_languages": SUPPORTED_LANGUAGES,
         "current_lang": request.cookies.get("oo-lang", "system"),
     }
+
+
+@routes.get("/settings")
+async def settings_redirect(request: web.Request) -> web.Response:
+    raise web.HTTPMovedPermanently("/appearance")
 
 
 @routes.post("/api/settings/language")
